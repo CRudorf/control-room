@@ -66,6 +66,8 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
   const sig = s?.signal ?? null;
   const existing = sig ? items.find((i) => i.key === sig.key) : undefined;
   const triage = !text.trim() && !!s?.skill;
+  const doneRef = useRef<HTMLInputElement>(null);
+  const [needDone, setNeedDone] = useState(false);
   const go = async (another = false) => {
     if (picked) { await pickup(); return; }
     if (triage && repo) {
@@ -78,7 +80,7 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
     }
     if (!sig || !repo) return;
     if (existing?.agents.length && !another) { onFocus(existing.id); onClose(); return; }
-    if (sig.kind === "task" && !done.trim()) { toast("Say what done looks like first"); return; }
+    if (sig.kind === "task" && !done.trim()) { setNeedDone(true); doneRef.current?.focus(); return; }
     setBusy(true);
     store(`cr-unattended-${sig.kind}`, unattended);
     const r = await post("/api/start", { signal: text, repo, unattended, video, ...(sig.kind === "task" && done.trim() ? { done } : {}),
@@ -126,7 +128,10 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
           {s?.repos.map((r) => <option key={r.repo} value={r.repo}>{r.repo}{r.profiled ? " · profiled" : ""}</option>)}
         </select>}
         {sig?.kind === "task" && (
-          <input className="field" style={{ marginTop: 10 }} placeholder="Done when: what you'll check to call it finished" value={done} onChange={(e) => setDone(e.target.value)} />
+          <>
+            <input ref={doneRef} className="field" style={{ marginTop: 10, ...(needDone ? { borderColor: "var(--warn)" } : {}) }} aria-invalid={needDone} aria-describedby={needDone ? "done-need" : undefined} placeholder="Done when: what you'll check to call it finished" value={done} onChange={(e) => { setDone(e.target.value); setNeedDone(false); }} />
+            {needDone && <p id="done-need" role="alert" className="st" style={{ margin: "6px 0 0" }}>Say what done looks like, so the agent can check its work against it.</p>}
+          </>
         )}
         {sig && sig.kind !== "task" && (<>
           <label className="st" style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
@@ -140,7 +145,7 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
           {existing?.agents.length ? <button type="button" className="btn" disabled={busy || !repo} onClick={() => void go(true)}>Start another</button> : null}
           {picked
             ? <button className="btn primary" type="submit" disabled={busy || !pickRepo || (!pickedArch && !steps.assign && !steps.move && !steps.agent)}>{busy ? "Picking up…" : "Pick up"} <kbd>⏎</kbd></button>
-            : <button className="btn primary" type="submit" disabled={busy || (!sig && !triage) || !repo || (sig?.kind === "task" && !existing?.agents.length && !done.trim())}>{existing?.agents.length ? "Show it" : busy ? "Starting…" : triage ? "Triage" : "Start"} <kbd>⏎</kbd></button>}
+            : <button className="btn primary" type="submit" disabled={busy || (!sig && !triage) || !repo}>{existing?.agents.length ? "Show it" : busy ? "Starting…" : triage ? "Triage" : "Start"} <kbd>⏎</kbd></button>}
         </div>
       </form>
     </Sheet>
