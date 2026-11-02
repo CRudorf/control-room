@@ -359,7 +359,7 @@ def slim(pr, t):
             "pending_reviewers": pending_reviewers(pr), "branch": pr["headRefName"],
             "base": pr["baseRefName"], "head": pr["headRefOid"], "id": pr["id"],
             "merge_state": pr["mergeStateStatus"], "can_merge": can_merge(pr),
-            "review_decision": pr["reviewDecision"], "last_activity": last_activity(pr),
+            "review_decision": pr["reviewDecision"], "last_activity": last_activity(pr), "last_push": last_push(pr),
             "waiting_since": waiting_since(pr), "merge_queue": merge_queue(pr), **t}
 
 

@@ -1,6 +1,7 @@
 import { trackerIssues } from "./tracker";
 import { checksFor, startChecks } from "./checks";
 import { startFeedbackTasks, withTasks } from "./feedbacktask";
+import { lastAction, myLastActions } from "./lastaction";
 import { SETTINGS } from "./settings";
 import { PROJECT } from "./repos";
 // Keeps the board's PR rows fresh and tells subscribers when the board changes.
@@ -237,10 +238,11 @@ export function snapshot(): Snapshot {
   const issues = new Map([...jiraIssues(), ...trackerIssues()]);
   const ef = efforts();
   const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs }), pickedNow(), issues), gs, done), runs());
+  const mine = myLastActions();
   const items = sortItems(rankNext(applyGuides(applyParks(applyLoop(blocked, views(blocked, loopsNow())), parks()))))
     .map((it) => {
       const u = usageFor(it), a = artifactsFor(it), e = ef.get(it.key), c = checksFor(it.prs);
-      return { ...withTasks(it), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
+      return { ...withTasks(it), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
     });
   const today = db.query<FinishedRow, [string]>("SELECT * FROM finished WHERE at >= ? ORDER BY at").all(midnight());
   const finished = finishedToday(today, items, featureOf, midnight())

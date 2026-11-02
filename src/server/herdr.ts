@@ -68,6 +68,10 @@ const finishedAt = new Map<string, number>();
 // "Mark seen" from the control room: pane → the state seq it was dismissed at. Kept across
 // restarts; it lapses as soon as the agent changes state again.
 const dismissed = new Map<string, number>(Object.entries(load<Record<string, number>>("dismissed") ?? {}));
+// pane → its status and when it took it, kept across restarts. An agent first seen mid-status has
+// no time: when it started is unknown.
+const since = new Map<string, { status: AgentStatus; at: string | null }>(Object.entries(load<Record<string, { status: AgentStatus; at: string | null }>>("agent_since") ?? {}));
+let sinceSaved = "";
 let up = false;
 let error: string | null = null;
 let onChange: () => void = () => {};
@@ -98,6 +102,8 @@ async function snapshot() {
       if (status === "working") finishedAt.delete(a.pane_id);
       else if ((status === "idle" || status === "done") && lastStatus.get(a.pane_id) === "working") finishedAt.set(a.pane_id, seq);
       lastStatus.set(a.pane_id, status);
+      const was = since.get(a.pane_id);
+      if (!was || was.status !== status) since.set(a.pane_id, { status, at: was ? new Date().toISOString() : null });
       next.push({
         pane: a.pane_id, tab: a.tab_id, workspace: a.workspace_id,
         name: a.name ?? null, label: tabs.get(a.tab_id)?.label ?? a.terminal_title_stripped ?? a.pane_id,
@@ -105,8 +111,13 @@ async function snapshot() {
         status, cwd, repo: g.repo, branch: g.branch, upstream: g.upstream, head: g.head,
         session: a.agent_session?.value ?? null, focused: !!a.focused, seq,
         finishedSeq: dismissed.get(a.pane_id) === seq ? null : finishedAt.get(a.pane_id) ?? null,
+        since: since.get(a.pane_id)!.at,
       });
     }
+    // Panes that are gone drop out; the rest are kept for the next restart.
+    for (const p of [...since.keys()]) if (!next.some((a) => a.pane === p)) since.delete(p);
+    const kept = JSON.stringify(Object.fromEntries(since));
+    if (kept !== sinceSaved) { save("agent_since", JSON.parse(kept)); sinceSaved = kept; }
     const changed = JSON.stringify(next) !== JSON.stringify(agents);
     const panesChanged = next.map((a) => a.pane).join() !== agents.map((a) => a.pane).join();
     agents = next;

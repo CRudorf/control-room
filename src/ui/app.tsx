@@ -24,6 +24,7 @@ import { Docs, useDocsCount } from "./docs";
 import type { Suggestion } from "../shared/types";
 import { branchLine } from "../shared/branches";
 import { Running, runningKinds } from "./running";
+import { nextSort, sortBy, type Sort, type SortCol } from "./sort";
 
 const LANES: { k: Lane; t: string; hc: string; sc: string }[] = [
   { k: "mine", t: "My turn", hc: "--h-mine", sc: "--s-mine" },
@@ -81,6 +82,8 @@ export function App() {
   const [sel, setSel] = useState<string | null>(() => location.pathname.match(/^\/item\/(.+)/)?.[1] ?? null);
   const [laneFilter, setLaneFilter] = useState<Set<Lane>>(new Set());
   const [groupBy, setGroupBy] = useState<"lane" | "repo" | "effort">(() => stored("cr-group", "lane"));
+  const [sort, setSort] = useState<Sort>(() => stored("cr-sort", null));
+  const onSort = (col: SortCol) => setSort((s) => { const n = nextSort(s, col); store("cr-sort", n); return n; });
   const [q, setQ] = useState("");
   const [focus, setFocus] = useState(false);
   // A detail pane taking the whole work area; null is the default view.
@@ -206,7 +209,7 @@ export function App() {
     (!q || [it.key, it.title, it.why, ...it.repos, ...it.prs.map((p) => `#${p.number}`)].join(" ").toLowerCase().includes(q.toLowerCase()))),
   [items, laneFilter, q]);
 
-  const groups: Group[] = useMemo(() => {
+  const grouped: Group[] = useMemo(() => {
     if (groupBy === "lane")
       return LANES.filter((l) => (!laneFilter.size ? true : laneFilter.has(l.k)))
         .map((l) => ({ key: l.k, title: l.t, lane: l.k, items: visible.filter((i) => i.lane === l.k) }))
@@ -227,6 +230,7 @@ export function App() {
     }
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])).map(([r, xs]) => ({ key: r, title: r, items: xs }));
   }, [visible, groupBy, laneFilter]);
+  const groups: Group[] = useMemo(() => grouped.map((g) => ({ ...g, items: sortBy(g.items, sort) })), [grouped, sort]);
   const order = useMemo(() => [...new Set(groups.flatMap((g) => g.items.map((i) => i.id)))], [groups]);
 
   const counts = useMemo(() => Object.fromEntries(LANES.map((l) => [l.k, items.filter((i) => i.lane === l.k).length])) as Record<Lane, number>, [items]);
@@ -405,7 +409,7 @@ export function App() {
                 </div>
               ) : (
                 <div className="rack">
-                  <ColsHead />
+                  <ColsHead sort={sort} onSort={onSort} />
                   {groups.map((g) => (
                     <section key={g.key}>
                       <div className={`bay-h ${g.collapsed !== undefined ? "toggle" : ""}`} style={{ "--hc": g.lane ? `var(${LANE[g.lane].hc})` : "var(--ink-3)" } as React.CSSProperties}
@@ -546,10 +550,21 @@ function MemoryWarning({ snap, onTidy }: { snap: Snapshot | null; onTidy: () => 
   return <button className="memwarn" onClick={onTidy} title="Open Tidy, heaviest tabs first">Memory low: {snap.machine.freePct}% free <kbd>t</kbd></button>;
 }
 
-function ColsHead() {
+const COLS: [SortCol, string, string][] = [
+  ["fb", "FB", "Most feedback first"], ["ci", "CI", "Failing first"], ["rv", "REVIEW", "Needs you first"],
+  ["mg", "MERGE", "Blocked first"], ["ag", "AGENT", "Waiting on you first"], ["last", "LAST", "Latest action first"],
+];
+
+/** Column heads; a click sorts each group by that column, again reverses it, a third time goes back to the board's order. */
+function ColsHead({ sort, onSort }: { sort: Sort; onSort: (c: SortCol) => void }) {
+  const head = (col: SortCol, label: string, hint: string, cls = "cell") => (
+    <button key={col} className={`${cls} sorter ${sort?.col === col ? "on" : ""}`} title={`Sort: ${hint}. Again to reverse, a third time for the board's order.`} onClick={() => onSort(col)}>
+      {label}{sort?.col === col ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+    </button>
+  );
   return (
-    <div className="cols-h"><span /><span>ITEM</span><span>WHAT · WHY</span>
-      <div className="cells"><span className="cell">FB</span><span className="cell">CI</span><span className="cell">REVIEW</span><span className="cell">MERGE</span><span className="cell">AGENT</span><span className="cell stale">STALE</span></div>
+    <div className="cols-h"><span />{head("item", "ITEM", "by key", "")}<span>WHAT · WHY</span>
+      <div className="cells">{COLS.map(([c, l, h]) => head(c, l, h, c === "last" ? "cell stale" : "cell"))}</div>
     </div>
   );
 }
@@ -574,7 +589,7 @@ function Strip({ it, sel, unseen, onClick }: { it: Group["items"][number]; sel: 
       <div className="what"><b>{it.title}</b><span className={it.lane === "mine" ? "need" : ""}>{it.why}</span></div>
       <div className="cells">
         <CellView c={it.cells.fb} /><CellView c={it.cells.ci} /><CellView c={it.cells.rv} /><CellView c={it.cells.mg} /><CellView c={it.cells.ag} />
-        {it.prs.length ? <span className="cell stale" title={`last push or human comment: ${new Date(it.updated).toLocaleString()}`}>{ago(it.updated)}</span> : <span className="cell stale dim">—</span>}
+        {it.last ? <span className="cell stale" title={`${it.last.what}${it.last.now ? "" : `, ${new Date(it.last.at).toLocaleString()}`}`}>{it.last.now ? "now" : ago(it.last.at)}</span> : <span className="cell stale dim">—</span>}
       </div>
     </motion.div>
   );

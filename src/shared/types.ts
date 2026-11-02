@@ -17,6 +17,9 @@ export type Feedback = {
   task?: FeedbackTask & { result: FeedbackResult | null };
 };
 
+/** The newest thing that happened on a work item, and what it was. */
+export type LastAction = { at: string; what: string; now?: boolean };
+
 /** A review thread handed to an agent from the board: `check` proves whether it's right, `fix` also fixes it. */
 export type FeedbackTask = { mode: "check" | "fix"; agent: string; at: string };
 /** What the agent found, with a reply for the user to send. `commit`: the local fix, not pushed. */
@@ -41,6 +44,8 @@ export type PrRow = {
   can_merge: string;
   review_decision: string | null;
   last_activity: string;
+  /** The latest commit or force push. */
+  last_push?: string | null;
   /** When it last landed on its reviewers: latest activity, review request or ready-for-review. */
   waiting_since?: string;
   /** Its place in the repo's merge queue, while it's in one. */
@@ -102,6 +107,8 @@ export type Agent = {
   seq: number;
   /** The seq at which it last went from working to finished, seen or not; null once it works again. */
   finishedSeq: number | null;
+  /** When it took its current status; null when the control room first saw it already in it. */
+  since?: string | null;
 };
 
 /** Waiting on author: a review request handed back until its author acts. */
@@ -175,6 +182,8 @@ export type WorkItem = {
   why: string;
   urgency: number;
   updated: string;
+  /** The newest action on it by anyone, agents and the control room included: the board's Last column. */
+  last?: LastAction | null;
   cells: { fb: Cell; ci: Cell; rv: Cell; mg: Cell; ag: Cell };
   primary: PrimaryAction;
   /** Its place in the Next queue, and which step of the ranking put it there. Absent: nothing for the user to do now. */
