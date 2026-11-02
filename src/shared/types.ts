@@ -13,7 +13,14 @@ export type Feedback = {
   thread_id?: string;
   reply_to?: number;
   opener?: string | null;
+  /** An agent checking or fixing this thread, and its verdict once written. */
+  task?: FeedbackTask & { result: FeedbackResult | null };
 };
+
+/** A review thread handed to an agent from the board: `check` proves whether it's right, `fix` also fixes it. */
+export type FeedbackTask = { mode: "check" | "fix"; agent: string; at: string };
+/** What the agent found, with a reply for the user to send. `commit`: the local fix, not pushed. */
+export type FeedbackResult = { verdict: "real" | "not-real" | "unclear" | "fixed"; evidence: string; reply: string; commit: string | null; at: string };
 
 /** One PR row from `prs.py --json`, `--mine --json` or `pr REF --json`. */
 export type PrRow = {

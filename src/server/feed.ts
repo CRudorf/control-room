@@ -1,5 +1,6 @@
 import { trackerIssues } from "./tracker";
 import { checksFor, startChecks } from "./checks";
+import { startFeedbackTasks, withTasks } from "./feedbacktask";
 import { SETTINGS } from "./settings";
 import { PROJECT } from "./repos";
 // Keeps the board's PR rows fresh and tells subscribers when the board changes.
@@ -239,7 +240,7 @@ export function snapshot(): Snapshot {
   const items = sortItems(rankNext(applyGuides(applyParks(applyLoop(blocked, views(blocked, loopsNow())), parks()))))
     .map((it) => {
       const u = usageFor(it), a = artifactsFor(it), e = ef.get(it.key), c = checksFor(it.prs);
-      return { ...it, ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
+      return { ...withTasks(it), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
     });
   const today = db.query<FinishedRow, [string]>("SELECT * FROM finished WHERE at >= ? ORDER BY at").all(midnight());
   const finished = finishedToday(today, items, featureOf, midnight())
@@ -403,6 +404,7 @@ export function start() {
   startUsage(publish);
   startArtifacts(publish);
   startChecks(publish);
+  startFeedbackTasks(publish);
   if (!POLL) {
     log("polling off (dev); serving the saved snapshot. Pass --poll to poll.");
     return;

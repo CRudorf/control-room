@@ -77,6 +77,37 @@ export function PrActions({ it, p }: { it: WorkItem; p: PrRow }) {
 
 type Draft = { body: string; resolve: boolean };
 
+const VERDICT: Record<NonNullable<NonNullable<Feedback["task"]>["result"]>["verdict"], [string, string]> = {
+  real: ["IT'S RIGHT", "pen"], "not-real": ["NOT REAL", "ok"], unclear: ["UNCLEAR", "dim"], fixed: ["FIXED, NOT PUSHED", "ok"],
+};
+
+/** An agent checking or fixing one thread: running while it works, then its verdict, evidence and reply. */
+function ThreadTask({ it, f, onUse }: { it: WorkItem; f: Feedback; onUse: (reply: string) => void }) {
+  const t = f.task;
+  if (!t) return null;
+  const a = it.agents.find((x) => (x.name ?? x.label) === t.agent);
+  const show = () => a && post("/api/agent/focus", { pane: a.pane }).then((r) => toast(r.error ? `Couldn't open: ${r.error}` : `Opened ${t.agent}`));
+  if (!t.result) {
+    const working = a?.status === "working";
+    return (
+      <div className={`ftask ${working ? "k-agent live" : ""}`}>
+        {working ? <i className="spin" /> : null}
+        <span>{t.mode === "check" ? "Checking" : "Fixing"} with {t.agent}{working ? "" : a ? ` · ${a.status === "blocked" ? "waiting on you" : "stopped without a verdict"}` : " · agent gone"}</span>
+        {a && <button className="btn sm" onClick={show}>Show agent</button>}
+      </div>
+    );
+  }
+  const [label, tone] = VERDICT[t.result.verdict];
+  return (
+    <div className="ftask">
+      <span className={`cell ${tone} verdict`}>{label}</span>
+      <span className="evidence">{t.result.evidence}{t.result.commit ? ` · commit ${t.result.commit.slice(0, 8)}` : ""}</span>
+      {t.result.reply.trim() && f.reply_to && <button className="btn sm" onClick={() => onUse(t.result!.reply)}>Use reply</button>}
+      {a && <button className="btn sm" onClick={show}>{t.result.verdict === "fixed" ? "Push from agent" : "Show agent"}</button>}
+    </div>
+  );
+}
+
 /** Open feedback with a reply box per thread; replies queue and go out together through one sheet. */
 export function Threads({ it, plain, ago }: { it: WorkItem; plain: (s: string) => string; ago: (s: string) => string }) {
   const threads = it.prs.flatMap((p) => (p.feedback ?? []).map((f) => ({ f, p })));
@@ -112,6 +143,14 @@ export function Threads({ it, plain, ago }: { it: WorkItem; plain: (s: string) =
       await act(it, ref(p), "resolve", { threads: list.filter((x) => x.p === p).map(({ f }) => ({ thread_id: f.thread_id, who: f.who })) });
     setResolving(new Set());
   };
+  const [starting, setStarting] = useState<string | null>(null);
+  const task = async (f: Feedback, p: PrRow, mode: "check" | "fix") => {
+    setStarting(key(f));
+    const r = await post("/api/feedback/task", { item: it.id, pr: ref(p), url: f.url, mode });
+    setStarting(null);
+    toast(r.error ? `Couldn't start: ${r.error}` : `${mode === "check" ? "Checking" : "Fixing"} with ${r.agent}`);
+  };
+  const useReply = (f: Feedback, body: string) => { setDrafts({ ...drafts, [key(f)]: { body, resolve: drafts[key(f)]?.resolve ?? true } }); setOpen(key(f)); };
   const again = [...new Set((it.loop ?? []).filter((lv) => lv.replies?.length && queued.some((q) => ref(q.p) === lv.ref)).flatMap((lv) => lv.rerequest ?? []))];
   const botThreads = threads.filter(({ f }) => f.bot && f.kind === "thread" && f.thread_id);
   if (!threads.length) return <div className="empty">Nothing unanswered.</div>;
@@ -135,7 +174,8 @@ export function Threads({ it, plain, ago }: { it: WorkItem; plain: (s: string) =
             <span className="who">{f.who}</span>{" "}
             <span className="where"><a href={f.url} target="_blank" rel="noreferrer">{num(p)}{f.where ? ` · ${f.where}` : ` · ${f.kind}`}</a> · {ago(f.at)}{f.outdated ? " · outdated" : ""}</span>
             <p>{plain(f.body) || "(no text)"}</p>
-            {f.kind === "thread" && f.reply_to && (open === key(f) || d ? (
+            <ThreadTask it={it} f={f} onUse={(body) => useReply(f, body)} />
+            {f.kind === "thread" && f.reply_to && (open === key(f) || d) ? (
               <div className="draft">
                 <textarea value={d?.body ?? ""} rows={3} autoFocus placeholder={`Reply to ${f.who}…`}
                   onChange={(e) => setDrafts({ ...drafts, [key(f)]: { body: e.target.value, resolve: d?.resolve ?? true } })} />
@@ -144,10 +184,14 @@ export function Threads({ it, plain, ago }: { it: WorkItem; plain: (s: string) =
               </div>
             ) : (
               <div className="row-acts">
-                <button className="btn sm" onClick={() => setOpen(key(f))}>Reply</button>
-                {f.thread_id && <button className="btn sm" disabled={resolving.has(key(f))} title="Resolve without replying; notifies nobody" onClick={() => resolve([{ f, p }])}>{resolving.has(key(f)) ? "Resolving…" : "Resolve"}</button>}
+                {p.role === "mine" && !(f.task && !f.task.result) && <>
+                  <button className="btn sm" disabled={starting === key(f)} title="An agent finds out whether it's right by running code. Changes nothing, posts nothing." onClick={() => task(f, p, "check")}>{starting === key(f) ? "Starting…" : f.task ? "Check again" : "Check"}</button>
+                  <button className="btn sm" disabled={starting === key(f)} title="An agent proves it with a failing test, fixes it and commits locally. Pushes only after your go-ahead." onClick={() => task(f, p, "fix")}>Fix</button>
+                </>}
+                {f.kind === "thread" && f.reply_to && <button className="btn sm" onClick={() => setOpen(key(f))}>Reply</button>}
+                {f.kind === "thread" && f.thread_id && <button className="btn sm" disabled={resolving.has(key(f))} title="Resolve without replying; notifies nobody" onClick={() => resolve([{ f, p }])}>{resolving.has(key(f)) ? "Resolving…" : "Resolve"}</button>}
               </div>
-            ))}
+            )}
           </div>
         );
       })}

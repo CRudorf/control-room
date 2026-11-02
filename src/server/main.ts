@@ -3,6 +3,7 @@ import { note as recordNote } from "./runner";
 import { join } from "node:path";
 import { DEV, PORT, ROOT } from "./config";
 import { adopt, copyAsk, moveJira, nudge, publish, setEffort, refetch, refresh, remove, removed, restore, setDependency, setHold, setMove, setPark, snapshot, start, subscribe } from "./feed";
+import { startFeedbackTask } from "./feedbacktask";
 import type { Move } from "../shared/types";
 import { markAddressed, postReplies, rerequest, rerunCi, resolveThreads, updateBranch, type Reply } from "./actions";
 import { closeAgent, dismissAgent, focusAgent, herdrReady, readAgent, sendKeys, sendToAgent, typeInto, type Typed } from "./herdr";
@@ -525,6 +526,14 @@ const server = Bun.serve({
         catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
       }),
     },
+    "/api/feedback/task": { POST: api(async (req) => {
+      const { item, pr, url, mode } = await req.json();
+      const it = snapshot().items.find((i) => i.id === item);
+      if (!it) return Response.json({ error: "no such work item" }, { status: 404 });
+      if (mode !== "check" && mode !== "fix") return Response.json({ error: "mode is check or fix" }, { status: 400 });
+      try { const r = await startFeedbackTask(it, pr, url, mode); publish(); return Response.json(r); }
+      catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
+    }) },
     "/api/agent/dismiss": { POST: api(async (req) => {
       const { pane, item, viewed } = await req.json();
       dismissAgent(pane, item ?? null, viewed ? "seen (viewed in the control room)" : "seen");
