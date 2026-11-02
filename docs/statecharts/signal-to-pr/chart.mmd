@@ -1,0 +1,71 @@
+---
+title: "signal-to-pr: one run"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: checks
+    lg1: find
+    lg2: you
+    lg3: fix
+    lg4: ship
+    lg5: end
+  }
+  class lg0 tan
+  class lg1 blue
+  class lg2 pink
+  class lg3 orange
+  class lg4 teal
+  class lg5 purple
+  s0: Reading the tuning and credentials
+  s1: Run over
+  s2: Looking for duplicate work
+  s3: Run record written
+  s4: Looking for duplicate work again
+  s5: Building the evidence pack
+  s6: Showing the triage menu
+  s7: Checking the gates
+  s8: Asking you
+  s9: Writing a failing test
+  s10: Fixing until the test passes
+  s11: Independent review
+  s12: Handing back
+  s13: Verifying after deploy
+  [*] --> s0
+  s0 --> s1: a credential fails
+  s0 --> s2: the tuning and credentials are ok
+  s1 --> s3: the run record is written
+  s2 --> s1: open work for it exists
+  s2 --> s4: none found, a link or request id
+  s2 --> s5: none found, a ticket key
+  s2 --> s6: none found, no signal given
+  s4 --> s1: open work for it exists
+  s4 --> s5: no open work for the endpoint or fingerprint
+  s5 --> s7: the pack is written
+  s6 --> s1: no finding chosen
+  s6 --> s4: you choose a finding
+  s7 --> s8: a gate fails [attended]
+  s7 --> s9: every gate passes
+  s7 --> s1: a gate fails [unattended]
+  s8 --> s1: you say stop
+  s8 --> s9: you say go on
+  s9 --> s10: the new test fails
+  s10 --> s11: the test passes
+  s11 --> s10: the reviewer finds a problem [attended]
+  s11 --> s12: the reviewer finds no problem
+  s11 --> s1: the reviewer finds a problem [unattended]
+  s12 --> s13: you deploy
+  s13 --> s1: each environment has a verdict
+  class s0 tan
+  class s1 purple
+  class s2 tan
+  class s3 purple
+  class s4 tan
+  class s5 blue
+  class s6 blue
+  class s7 blue
+  class s8 pink
+  class s9 orange
+  class s10 orange
+  class s11 orange
+  class s12 teal
+  class s13 teal

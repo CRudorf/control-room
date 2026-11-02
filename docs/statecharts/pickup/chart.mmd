@@ -1,0 +1,26 @@
+---
+title: "Suggestion pickup"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: list
+    lg1: hidden
+    lg2: board
+  }
+  class lg0 blue
+  class lg1 tan
+  class lg2 teal
+  s0: Suggested
+  s1: Chosen in the Start box
+  s2: Dismissed
+  s3: Work item on the board
+  [*] --> s0
+  s0 --> s1: The user chooses it
+  s0 --> s2: The user dismisses it
+  s1 --> s0: The user closes the Start box
+  s1 --> s3: pick up with assign, move to In Progress or start agent (move to In Progress only with assign)
+  s2 --> s0: it shows again
+  class s0 blue
+  class s1 blue
+  class s2 tan
+  class s3 teal

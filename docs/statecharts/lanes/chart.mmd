@@ -1,0 +1,60 @@
+---
+title: "Work item lanes: whose turn it is"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: new
+    lg1: mine
+    lg2: waiting
+    lg3: asked
+    lg4: parked
+    lg5: finished
+  }
+  class lg0 tan
+  class lg1 yellow
+  class lg2 teal
+  class lg3 orange
+  class lg4 purple
+  class lg5 blue
+  s0: New on the board
+  s1: Waiting on others
+  s2: Asked of me
+  s3: My turn
+  s4: Parked
+  s5: Waiting on others: blocked
+  s6: Waiting on others: on the author
+  s7: Review done: off the board
+  s8: Finished
+  s9: My turn: agent waiting for input
+  [*] --> s0
+  s0 --> s1: it is grouped by its key
+  s0 --> s2: it is grouped by its key
+  s1 --> s3: a person gives feedback or acts
+  s1 --> s4: The user parks it
+  s1 --> s5: The user dependencies the PR
+  s2 --> s4: The user parks it
+  s2 --> s6: The user waits on the author
+  s2 --> s7: The user reviews it
+  s3 --> s1: The user pushes a fix or an agent starts
+  s3 --> s8: all its PRs are merged or closed
+  s3 --> s4: The user parks it
+  s3 --> s5: The user dependencies the PR
+  s4 --> s3: a person acts or the until-date passes
+  s4 --> s1: a person acts or the until-date passes
+  s5 --> s1: the dependency opens
+  s4 --> s2: a person acts or the until-date passes
+  s6 --> s2: a person gives feedback or acts
+  s1 --> s9: the agent asks for input
+  s5 --> s3: the dependency opens
+  s9 --> s1: The user answers the agent
+  s4 --> s9: the agent asks for input
+  class s0 tan
+  class s1 teal
+  class s2 orange
+  class s3 yellow
+  class s4 purple
+  class s5 teal
+  class s6 teal
+  class s7 blue
+  class s8 blue
+  class s9 yellow

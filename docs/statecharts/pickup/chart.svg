@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 652 557" width="652" height="557" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_tw:var(--pele-title-weight,bold);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>.pele {
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect {
+  fill: #ffecee !important;
+  stroke: #e72e3b !important;
+  stroke-width: 2.5px !important;
+}
+.pele .breaks text {
+  fill: #cd2834 !important;
+}
+.pele .mayBreak rect {
+  fill: #fff3e6 !important;
+  stroke: #e8730c !important;
+  stroke-width: 2.5px !important;
+}
+.pele .mayBreak text {
+  fill: #b85a06 !important;
+}
+.pele .bugPath rect {
+  stroke: #1680f3 !important;
+  stroke-width: 2.5px !important;
+}
+.pele .repeats rect {
+  stroke: #9b35d6 !important;
+  stroke-width: 2.5px !important;
+  stroke-dasharray: 6 3;
+}
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect {
+    fill: #2e2021 !important;
+    stroke: #cf2b35 !important;
+  }
+  .pele .breaks text {
+    fill: #ff6463 !important;
+  }
+  .pele .mayBreak rect {
+    fill: #2e2619 !important;
+    stroke: #d0700f !important;
+  }
+  .pele .mayBreak text {
+    fill: #ffa257 !important;
+  }
+  .pele .bugPath rect {
+    stroke: #116dd2 !important;
+  }
+  .pele .repeats rect {
+    stroke: #9a3fcf !important;
+  }
+}</style><text class="pele-title" font-weight="var(--_tw)" text-anchor="middle" xml:space="preserve"><tspan x="326" y="25.6">Suggestion pickup</tspan></text><g transform="translate(0,36)"><g class="pele-clusters"><g class="pele-cluster pele-state-composite" data-id="legend"><rect x="322.59" y="8" width="320.94" height="112" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M322.59,44H643.53" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="483.06" y="31.6" text-anchor="middle">Legend</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M275.59,120L275.59,157"/><path class="pele-marker" d="M275.59,164L272.23,156L278.95,156Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M251.59,208L251.59,220.25C251.59,230.02 215.61,236 156.91,236C98.21,236 62.24,251.2 62.24,276L62.24,316"/><path class="pele-marker" d="M62.24,323L58.88,315L65.6,315Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M283.59,208L283.59,221C283.59,237.74 301.1,248 329.67,248C358.25,248 375.76,258.64 375.76,276L375.76,301C375.76,306.63 430.38,306.63 430.38,312.25L430.38,316"/><path class="pele-marker" d="M430.38,323L427.02,315L433.74,315Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M216.67,323L216.67,276C216.67,258.64 226.34,248 242.13,248C257.91,248 267.59,237.74 267.59,221L267.59,215"/><path class="pele-marker" d="M267.59,208L270.95,216L264.23,216Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M139.45,367L139.45,462"/><path class="pele-marker" d="M139.45,469L136.09,461L142.81,461Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge5"><path d="M446.38,323L446.38,313.38C446.38,307.19 501,307.19 501,301L501,276C501,251.2 462.73,236 400.3,236C337.86,236 299.59,230.02 299.59,220.25L299.59,215"/><path class="pele-marker" d="M299.59,208L302.95,216L296.23,216Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge1"><rect x="10" y="278" width="104.47" height="21" rx="3" fill="var(--_bg)"/><text x="62.24" y="293.4" text-anchor="middle">the user chooses it</text></g><g class="pele-edge-label" data-id="edge2"><rect x="318.87" y="278" width="113.78" height="21" rx="3" fill="var(--_bg)"/><text x="375.76" y="293.4" text-anchor="middle">the user dismisses it</text></g><g class="pele-edge-label" data-id="edge3"><rect x="134.47" y="278" width="164.39" height="21" rx="3" fill="var(--_bg)"/><text x="216.67" y="293.4" text-anchor="middle">the user closes the Start box</text></g><g class="pele-edge-label" data-id="edge4"><rect x="38.2" y="387.5" width="202.52" height="54" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="139.45" y="401.4">pick up with assign, move to In</tspan><tspan x="139.45" y="419.4">Progress or start agent (move</tspan><tspan x="139.45" y="437.4">to In Progress only with assign)</tspan></text></g><g class="pele-edge-label" data-id="edge5"><rect x="452.65" y="278" width="96.7" height="21" rx="3" fill="var(--_bg)"/><text x="501" y="293.4" text-anchor="middle">it shows again</text></g></g><g class="pele-nodes"><g class="pele-node pele-state blue" data-id="s0" transform="translate(275.59,186)"><rect x="-54.25" y="-22" width="108.5" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Suggested</text></g><g class="pele-node pele-state blue" data-id="s1" transform="translate(139.45,345)"><rect x="-99.6" y="-22" width="199.2" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Chosen in the Start box</text></g><g class="pele-node pele-state tan" data-id="s2" transform="translate(438.38,345)"><rect x="-52.89" y="-22" width="105.78" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Dismissed</text></g><g class="pele-node pele-state teal" data-id="s3" transform="translate(139.45,491)"><rect x="-99.14" y="-22" width="198.29" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Work item on the board</text></g><g class="pele-node pele-state-start" data-id="root_start" transform="translate(275.59,113)"><circle r="7" fill="var(--_l)"/></g><g class="pele-node pele-state blue" data-id="lg0" transform="translate(366.59,82)"><rect x="-28" y="-22" width="56" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">list</text></g><g class="pele-node pele-state tan" data-id="lg1" transform="translate(474.6,82)"><rect x="-40.02" y="-22" width="80.03" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">hidden</text></g><g class="pele-node pele-state teal" data-id="lg2" transform="translate(591.07,82)"><rect x="-36.46" y="-22" width="72.91" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">board</text></g></g></g></svg>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>@LABEL@</string>
+  <key>ProgramArguments</key>
+  <array><string>@APPBUNDLE@/Contents/MacOS/control-room-server</string><string>@BUN@</string><string>src/server/main.ts</string></array>
+  <key>AssociatedBundleIdentifiers</key><string>com.control-room.app</string>
+  <key>WorkingDirectory</key><string>@APP@</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <!-- A verification run's app is a child. A restart must not end it. -->
+  <key>AbandonProcessGroup</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CR_PROJECT</key><string>@PROJECT@</string>
+    <key>PATH</key><string>/opt/homebrew/bin:@HOME@/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key><string>@LOGS@/server.log</string>
+  <key>StandardErrorPath</key><string>@LOGS@/server.log</string>
+</dict>
+</plist>
