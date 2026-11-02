@@ -398,8 +398,7 @@ export function App() {
                   {groups.map((g) => (
                     <div key={g.key} style={{ display: "contents" }}>
                       {g.items.map((i) => (
-                        <motion.div layout key={`${g.key}-${i.id}`} className={`mini ${i.id === sel ? "sel" : ""}`} style={laneVars(i.lane)}
-                          animate={{ x: i.lane === "mine" && i.urgency >= 3 ? 6 : 0 }} title={`${i.key}: ${i.title}`} onClick={() => select(i.id)}>
+                        <motion.div layout key={`${g.key}-${i.id}`} className={`mini ${i.id === sel ? "sel" : ""}`} style={laneVars(i.lane)} title={`${i.key}: ${i.title}`} onClick={() => select(i.id)}>
                           <span className="hold" />
                         </motion.div>
                       ))}
@@ -576,11 +575,10 @@ function Strip({ it, sel, unseen, onClick }: { it: Group["items"][number]; sel: 
   const ps = it._group ? it.prs.filter((p) => short(p.repo) === it._group) : it.prs;
   const ids = !it.prs.length ? (it.branches?.length ? branchLine(it.branches) : `no PR yet · ${it.agents[0]?.workspaceLabel ?? ""}`)
     : it._group ? ps.map((p) => `#${p.number}`).join(", ") : ps.slice(0, 2).map(num).join(", ") + (ps.length > 2 ? ` +${ps.length - 2}` : "");
-  const cocked = it.lane === "mine" && it.urgency >= 3;
   const runs = runningKinds(it);
   return (
     <motion.div layout layoutId={it._group ? undefined : `strip-${it.id}`} data-item={it.id} className={`strip ${sel ? "sel" : ""} ${runs.length ? "running" : ""}`} style={laneVars(it.lane)}
-      initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0, x: cocked ? 18 : 0 }} exit={{ opacity: 0, scale: 0.97 }}
+      initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
       transition={spring} onClick={onClick} role="button">
       {unseen && <i className="tick" title="changed since you last looked" />}
       <Running kinds={runs} />
