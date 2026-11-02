@@ -6,7 +6,7 @@ import type { Draft, PrRow, ReviewDrafts } from "../shared/types";
 import { prRef } from "../shared/types";
 import { DEV, INSTALLED_STATE_DIR } from "./config";
 import { read, write } from "./runner";
-import { lessonsFor } from "./lessons";
+import { lessonsFor, TESTS_RULE } from "./lessons";
 
 // Agents always write where the installed app reads, even when a dev server built the prompt.
 const DIR = join(INSTALLED_STATE_DIR, "reviews");
@@ -47,7 +47,7 @@ Page rules: colors as CSS variables on :root, with a dark set under @media (pref
 /** A review of someone else's PR, or with `own`, a self-review of the user's before his reviewers see it. */
 export function reviewPrompt(p: PrRow, personas: number, own = false): string {
   const ref = `${p.repo}#${p.number}`;
-  return `Run a ${personas} person multi-persona review on ${own ? "my own " : ""}PR ${ref} ("${p.title}")${own ? ", before my reviewers see it: be the reviewers I'm about to get, including the review bots (CodeRabbit and the like), and find what they would" : ""}. Check it out in your worktree first: \`gh pr checkout ${p.number} -R ${p.repo}\`. Any finding gets verified locally and empirically by running actual code; note the input and output that confirm it. Drop findings you can't confirm.
+  return `Run a ${personas} person multi-persona review on ${own ? "my own " : ""}PR ${ref} ("${p.title}")${own ? ", before my reviewers see it: be the reviewers I'm about to get, including the review bots (CodeRabbit and the like), and find what they would" : ""}. Check it out in your worktree first: \`gh pr checkout ${p.number} -R ${p.repo}\`. Any finding gets verified locally and empirically by running actual code; note the input and output that confirm it. Drop findings you can't confirm. ${TESTS_RULE}
 
 ${own && lessonsFor(p.repo).length ? `My merged PRs in this repo have broken things before. Check this one can't do the same, and make each that applies a finding:\n${lessonsFor(p.repo).map((l) => `- ${l.text} (${l.ref.split("/").pop()}${l.files?.length ? `, in ${l.files.join(", ")}` : ""})`).join("\n")}\n\n` : ""}${own ? "Then draft the findings for me to fix, each body saying what's wrong and the fix. Make no code changes, push nothing and post nothing to the PR." : "Then draft the findings to pass on as a code reviewer, as inline comments on the PR. Make no code changes and post nothing to the PR."}
 

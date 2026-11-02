@@ -14,6 +14,9 @@ export type Lesson = {
   stick?: { agent: string; at: string };
 };
 
+/** Self-review and its replays both check this: a test can pass because someone weakened it. */
+export const TESTS_RULE = "If the diff changes a test along with the code it tests, check the test wasn't weakened or special-cased to pass. Run the old test against the new code. Make it a finding if it fails.";
+
 export const SHELF_MS = 90 * 24 * 3600_000;
 
 let lessons: Lesson[] = load<Lesson[]>("lessons") ?? [];
@@ -61,5 +64,18 @@ export function current(all: Lesson[], repo: string, n = 8, now = Date.now()): L
   const name = repo.split("/").pop();
   return all.filter((l) => l.repo.split("/").pop() === name && now - Date.parse(l.seen ?? l.at) < SHELF_MS).slice(-n);
 }
+
+/** The next lesson to make stick: the newest current one with no agent on it yet, whose PR is still watched. */
+export function dueStick<W extends { ref: string }>(all: Lesson[], watched: W[], now = Date.now()): { lesson: Lesson; watched: W } | null {
+  for (const l of [...all].reverse()) {
+    const w = watched.find((x) => x.ref === l.ref);
+    if (w && !l.stick && now - Date.parse(l.seen ?? l.at) < SHELF_MS) return { lesson: l, watched: w };
+  }
+  return null;
+}
+
+/** Lessons whose cited files are all gone. `exists` answers null when it can't tell, and that keeps the lesson. */
+export const goneLessons = (all: Lesson[], exists: (repo: string, file: string) => boolean | null) =>
+  all.filter((l) => l.files?.length && l.files.every((f) => exists(l.repo, f) === false));
 
 export const lessonsFor = (repo: string, n = 8) => current(lessons, repo, n);

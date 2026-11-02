@@ -290,7 +290,7 @@ Then write \`${reportFile(w.ref)}\` as JSON and stop:
 }
 
 function alert(w: Shipped) {
-  const why = [w.reverts.length && "reverted", w.rework.some((r) => r.fix) && "a fix commit rewrote its lines", w.ciFailures.some((f) => !f.suspect) && `${w.ciFailures.filter((f) => !f.suspect).map((f) => f.name).join(", ")} failed after the merge`, w.sentry?.length && `${w.sentry.length} new Sentry issue${w.sentry.length > 1 ? "s" : ""}`].filter(Boolean).join(", ");
+  const why = [w.reverts.length && "reverted", w.rework.some((r) => r.fix) && "a fix commit rewrote its lines", w.ciFailures.some((f) => !f.suspect) && `${w.ciFailures.filter((f) => !f.suspect).map((f) => f.name).join(", ")} failed after the merge`, w.sentry?.length && `${w.sentry.length} new error report${w.sentry.length > 1 ? "s" : ""}`].filter(Boolean).join(", ");
   const short = w.ref.split("/").pop()!;
   note({ item: w.feature, trigger: "watch" }, "shipped-alert", short, w.state, { detail: w });
   send({ title: `Shipped ${short}: ${w.state === "broke" ? "may have broken something" : "worth a look"}`, body: `${why} · ${w.title}`, url: `http://127.0.0.1:4777/?shipped=${encodeURIComponent(w.ref)}`, loud: w.state === "broke", thread: `shipped-${w.ref}` });

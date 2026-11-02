@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Agent, PrRow } from "../shared/types";
+import type { Agent, PrRow, WorkItem } from "../shared/types";
 import { groupWorkItems } from "./workitems";
 import { findItem, formatItem, MAX_CHARS } from "./itemview";
 
@@ -71,4 +71,10 @@ describe("the item view", () => {
     expect(text).toContain("No PRs yet.");
     expect(text).toContain("No agents on it.");
   });
+});
+
+test("a branch name finds its work item", () => {
+  const it = { id: "x", key: "X-1", repos: [], prs: [{ branch: "feat/Y", repo: "a/b", number: 1 }] } as unknown as WorkItem;
+  expect(findItem([it], "feat/y")).toBe(it);
+  expect(findItem([it], "feat/z")).toBeNull();
 });

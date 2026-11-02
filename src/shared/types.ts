@@ -124,6 +124,8 @@ export type Suggestion = {
   key: string; summary: string; source: SuggestSource; status: string; priority: string | null; assignee: "me" | null;
   labels: string[]; parent: { key: string; summary: string | null } | null; links: SuggestLink[]; updated: string | null;
   rank: number; url: string | null;
+  /** Set on a GitHub issue, which has no In Progress status to move to. */
+  tracker?: "github";
   /** Architecture only: the repo and the candidate as the agent wrote it. */
   repo?: string; arch?: { title: string; strength: string; files: string[]; problem: string; solution: string };
   verdict: Verdict | null; of: string | null; reason: string | null;
@@ -131,7 +133,7 @@ export type Suggestion = {
   facts: { board: string[]; prs: string[] };
   boost: number;
 };
-export type SuggestionsView = { suggestions: Suggestion[]; error: string | null; judgedAt: string | null; archAt: string | null };
+export type SuggestionsView = { tracker: "jira" | "github" | null; suggestions: Suggestion[]; error: string | null; judgedAt: string | null; archAt: string | null };
 
 /** ⏎ on a work item: open a URL, or show an agent in herdr. */
 export type PrimaryAction = {
@@ -149,6 +151,9 @@ export type PrimaryAction = {
   /** The PR the handoff or act is about. */
   pr?: string;
 };
+
+/** What a repo's Stop hook ran when an agent last tried to finish on a branch. */
+export type StopCheck = { repo: string; branch: string; sha: string; at: string; ok: boolean; commands: { command: string; exit: number }[] };
 
 export type WorkItem = {
   id: string;
@@ -181,6 +186,8 @@ export type WorkItem = {
   artifacts?: Artifact[];
   /** Claude tokens spent on it, with the electricity and water estimate. */
   usage?: UsageTotals;
+  /** The last Stop check on each of its PR branches. */
+  stopChecks?: StopCheck[];
   /** The review loop on each of its PRs the loop looks after. */
   loop?: LoopView[];
   /** Field guides to its requested PRs. */
@@ -365,6 +372,7 @@ export type Accomplished = {
 
 /** The weekly self-improvement loop: its last run and the newest report its agent wrote. */
 export type LoopState = {
+  pulse?: number | null;
   last: { week: string; at: string; agent: string | null; error: string | null } | null;
   report: { week: string; text: string } | null;
 };

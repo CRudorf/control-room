@@ -100,6 +100,7 @@ export function Metrics({ onClose }: { onClose: () => void }) {
   const [syncing, setSyncing] = useState(false);
   const [loop, setLoop] = useState<LoopState | null>(null);
   const [looping, setLooping] = useState(false);
+  const [pulse, setPulse] = useState<number | null>(null);
   const [u, setU] = useState<Usage | null>(null);
   const [co, setCo] = useState<{ whPerMTok: string; litersPerKwh: string } | null>(null);
   const load = async () => {
@@ -234,6 +235,13 @@ export function Metrics({ onClose }: { onClose: () => void }) {
                   ? loop.last.error ? `Last run failed ${ago(loop.last.at)} ago: ${loop.last.error}` : `Last run ${ago(loop.last.at)} ago as ${loop.last.agent}; it reports, files loop issues and opens a draft PR`
                   : "Runs once a week, the first weekday morning between 9 and noon: reports, files up to 3 loop issues, opens a draft PR for the top one."}</span>
                 <button className="btn" disabled={looping} onClick={runLoop}>{looping ? "Starting…" : "Run it now"}</button>
+              </div>
+              <div className="row-acts" style={{ margin: "8px 0", alignItems: "center" }}>
+                <span className="st dim">How smooth did this week feel? It goes in the brief.</span>
+                {[1, 2, 3, 4, 5].map((n) => <button key={n} className={`btn ${(pulse ?? loop?.pulse) === n ? "on" : ""}`} onClick={async () => {
+                  const r = await fetch("/api/loop/pulse", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ score: n }) }).then((x) => x.json()).catch(() => ({ error: "server unreachable" }));
+                  if (!r.error) setPulse(n);
+                }}>{n}</button>)}
               </div>
               {loop?.report ? <pre className="loopreport">{loop.report.text}</pre> : <div className="st dim">No report yet.</div>}
             </div>

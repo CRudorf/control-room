@@ -8,7 +8,7 @@ import type { Shipped } from "../shared/types";
 import { INSTALLED_STATE_DIR } from "./config";
 import { load, save } from "./db";
 import { startAgent } from "./handoff";
-import { allLessons, current, type Lesson } from "./lessons";
+import { allLessons, current, TESTS_RULE, type Lesson } from "./lessons";
 import { lessonFiles, shipped } from "./shipped";
 
 /** Replays started at once, at most; each is a full review. */
@@ -18,7 +18,9 @@ const DIR = join(INSTALLED_STATE_DIR, "replays");
 mkdirSync(DIR, { recursive: true });
 export const replayFile = (ref: string) => join(DIR, ref.replace(/[/#]/g, "__") + ".json");
 
-export type Replay = { ref: string; at: string; findings: number; caught: boolean; files: string[] };
+type Finding = { path?: string; rank?: string; title?: string; body?: string };
+/** `caught` is null until the user grades its candidates; no candidates is a miss. */
+export type Replay = { ref: string; at: string; findings: number; caught: boolean | null; files: string[]; candidates: { path: string; title: string }[]; lesson: string | null };
 
 /** A break's files: those its fix commits (or any later commits) rewrote, else the whole PR when reverted. */
 export function breakFiles(w: Pick<Shipped, "rework" | "reverts" | "files">): string[] {
@@ -27,9 +29,18 @@ export function breakFiles(w: Pick<Shipped, "rework" | "reverts" | "files">): st
   return w.reverts.length ? w.files : lessonFiles(w);
 }
 
-/** Whether any finding lands in a file the break was in. */
-export function caught(findings: { path?: string }[], files: string[]): boolean {
-  return findings.some((f) => !!f.path && files.some((x) => x === f.path || x.endsWith(`/${f.path}`) || f.path!.endsWith(`/${x}`)));
+/** Findings that could be the break: in a file it was in, and not a nit. Being in the file doesn't make it the same bug. */
+export function candidates<F extends Finding>(findings: F[], files: string[]): F[] {
+  return findings.filter((f) => f.rank !== "nit" && !!f.path && files.some((x) => x === f.path || x.endsWith(`/${f.path}`) || f.path!.endsWith(`/${x}`)));
+}
+
+/** A replay's grade: a miss with no candidates, else the user's call on this run, null until then. */
+export const grade = (cands: unknown[], g: { at: string; same: boolean } | undefined, at: string): boolean | null =>
+  !cands.length ? false : g?.at === at ? g.same : null;
+
+/** The user's call: is a candidate the bug that broke? It holds for this run only. */
+export function gradeReplay(ref: string, at: string, same: boolean) {
+  save("replay_grades", { ...(load<Record<string, { at: string; same: boolean }>>("replay_grades") ?? {}), [ref]: { at, same } });
 }
 
 /** The lessons the repo had before this break: its own (and any later) left out. */
@@ -40,7 +51,7 @@ export function replayPrompt(w: Shipped, lessons: Lesson[]): string {
   const [repo, n] = w.ref.split("#");
   return `This is a replay, a test of self-review: review my PR ${w.ref} ("${w.title}") as it was the moment it merged, as if my reviewers hadn't seen it yet. Be the reviewers I'm about to get, including the review bots. Don't look at anything that happened after the merge: no later commits on the base, no issues, no Sentry, no PR comments.
 
-Check out the PR's head in your worktree: \`git fetch origin pull/${n}/head && git checkout --detach FETCH_HEAD\`. Diff it against its base at the merge: \`git diff ${w.mergeSha ? `${w.mergeSha}^1` : "origin/HEAD"}...HEAD\`. Any finding gets verified by running code; drop what you can't confirm.
+Check out the PR's head in your worktree: \`git fetch origin pull/${n}/head && git checkout --detach FETCH_HEAD\`. Diff it against its base at the merge: \`git diff ${w.mergeSha ? `${w.mergeSha}^1` : "origin/HEAD"}...HEAD\`. Any finding gets verified by running code; drop what you can't confirm. ${TESTS_RULE}
 
 ${lessons.length ? `My merged PRs in this repo have broken things before. Check this one can't do the same, and make each that applies a finding:\n${lessons.map((l) => `- ${l.text} (${l.ref.split("/").pop()}${l.files?.length ? `, in ${l.files.join(", ")}` : ""})`).join("\n")}\n\n` : ""}Make no code changes, push nothing and post nothing. Write the findings as JSON to \`${replayFile(w.ref)}\`, replacing any earlier file:
 
@@ -53,13 +64,17 @@ Paths are relative to the repo root of ${repo}.`;
 
 /** Graded replays, newest first. */
 export function replays(ws = shipped()): Replay[] {
+  const grades = load<Record<string, { at: string; same: boolean }>>("replay_grades") ?? {};
   return ws.flatMap((w) => {
     const f = replayFile(w.ref);
     if (!existsSync(f)) return [];
     try {
       const d = JSON.parse(readFileSync(f, "utf8"));
       const files = breakFiles(w);
-      return [{ ref: w.ref, at: String(d.at ?? ""), findings: (d.findings ?? []).length, caught: caught(d.findings ?? [], files), files }];
+      const at = String(d.at ?? "");
+      const cands = candidates<Finding>(d.findings ?? [], files);
+      return [{ ref: w.ref, at, findings: (d.findings ?? []).length, caught: grade(cands, grades[w.ref], at), files,
+        candidates: cands.map((c) => ({ path: c.path!, title: c.title ?? c.body ?? "" })), lesson: w.lesson?.text ?? null }];
     } catch { return []; } // half-written: read it next time
   }).sort((a, b) => b.at.localeCompare(a.at));
 }

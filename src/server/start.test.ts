@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseSignal, reposFromHistory, taskPrompt } from "./start";
+import { parseSignal, reposFromHistory, startFromSignal, taskPrompt } from "./start";
 
 describe("parseSignal", () => {
   test("Jira keys and URLs, Sentry short ids and URLs, PostHog replays", () => {
@@ -38,5 +38,11 @@ describe("taskPrompt", () => {
     const p = taskPrompt("add a CSV export", "the export downloads with a header row ");
     expect(p).toStartWith("add a CSV export\n\nDone when: the export downloads with a header row\n\n");
     expect(p).toContain("exit code");
+  });
+});
+
+describe("startFromSignal", () => {
+  test("a task with no done line doesn't start", async () => {
+    await expect(startFromSignal("add a CSV export", "widgets", false, "  ")).rejects.toThrow("done");
   });
 });

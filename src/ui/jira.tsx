@@ -10,7 +10,7 @@ const short = (repo: string) => repo.split("/").pop()!;
 export function MoveJiraSheet({ item, s, onClose }: { item: string | null; s: Suggested; onClose: () => void }) {
   return (
     <Confirm title={`Move ${s.key} to ${s.to}`} label="Move" onClose={onClose}
-      who={`${s.key} is ${s.from} in Jira; ${s.why}. Everyone watching the issue sees the change.`}
+      who={`${s.key} is ${s.from} in the tracker; ${s.why}. Everyone watching the issue sees the change.`}
       go={async () => {
         const r = await post("/api/jira/transition", { item, key: s.key, to: s.to });
         toast(r.error ? `Couldn't move ${s.key}: ${r.error}` : `${s.key} moved to ${s.to}`);

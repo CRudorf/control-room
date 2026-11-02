@@ -12,11 +12,11 @@ import { qualityRecords, setVerdict, shipped, startShipped, verifyPrompt } from 
 import { bounces } from "./product";
 import { allLessons, lessonsFor, markStick, removeLesson, stickPrompt } from "./lessons";
 import { findItem, formatItem } from "./itemview";
-import { replays, runReplays, waitingReplays } from "./replay";
+import { replays, runReplays, waitingReplays, gradeReplay } from "./replay";
 import { recordEvent } from "./events";
 import { historySyncedAt, METRICS_FROM, prFacts, startHistory, syncHistory } from "./history";
 import { features, friction, quality, stageTimes, weekly, type Event } from "./metrics";
-import { loopState, runLoop, startLoop } from "./loop";
+import { loopState, runLoop, startLoop, setPulse } from "./loop";
 import { closedTabs, closeTabs, history, listTabs } from "./tidy";
 import { startAgent, tasksFor, type StartRequest } from "./handoff";
 import { startFromSignal, startTriage, suggest } from "./start";
@@ -25,6 +25,8 @@ import { setCoeffs, usage } from "./usage";
 import { machine } from "./health";
 import { awsSession, refreshMfa } from "./aws";
 import { guardrails } from "./guardrails";
+import { setupTracker, trackerState } from "./tracker";
+import { checkHookPrompt, checkLine, checksFor, reposWithoutChecks } from "./checks";
 import { openArtifact } from "./artifacts";
 import { diffLines, postReview, readDrafts, type Picked } from "./review";
 import { deleteRun, listWorktrees, removeWorktrees, startCleanup } from "./cleanup";
@@ -34,7 +36,7 @@ import { sendHeld, setLoop } from "./reviewloop";
 import { accomplished } from "./done";
 import { guidePage, linkGuide, promoteGuide } from "./guides";
 import type { HeldReply } from "../shared/types";
-import { archAgentPrompt, dismissSuggestion, judgeSuggestions, pickupSuggestion, type PickupSteps, runArchitecture, startSuggestions, suggestionsView } from "./suggestions";
+import { archAgentPrompt, dismissSuggestion, judgeSuggestions, pickupSuggestion, type PickupSteps, runArchitecture, startSuggestions, suggestionsView, syncSuggestions } from "./suggestions";
 import { docsView, reviewDoc } from "./docs";
 import { addFlowChange, chartChange, chartRun, flowChangePreview, getVisual, listVisuals, visualFile } from "./visuals";
 
@@ -85,7 +87,7 @@ const server = Bun.serve({
       const q = new URL(req.url).searchParams.get("q") ?? "";
       const it = findItem(snapshot().items, q);
       if (!it) return new Response(`no work item on the board matches ${q}`, { status: 404 });
-      return new Response(formatItem(it, it.repos.flatMap((r) => lessonsFor(r))));
+      return new Response(formatItem(it, it.repos.flatMap((r) => lessonsFor(r)), checksFor(it.prs).map(checkLine)));
     }),
     "/api/refresh": { POST: api(async () => { await refresh(); return Response.json({ ok: true }); }) },
     "/api/agent/read": api(async (req) => {
@@ -98,6 +100,7 @@ const server = Bun.serve({
       try { return Response.json({
         tabs: await listTabs(snapshot().items), closed: closedTabs(), machine: await machine(),
         guardrails: await guardrails(snapshot().items.flatMap((i) => i.prs.filter((p) => p.role === "mine").map((p) => p.repo))),
+        noChecks: reposWithoutChecks(snapshot().items.flatMap((i) => i.prs.filter((p) => p.role === "mine").map((p) => p.repo))),
       }); }
       catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
     }),
@@ -203,6 +206,16 @@ const server = Bun.serve({
       try { return Response.json(await startAgent({ item: `verify-${w.feature}`, repo: w.repo ?? ref.split("#")[0], pr: null, kind: "custom", prompt: verifyPrompt(w), edited: false, bare: true })); }
       catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
     }) },
+    "/api/checks/add": { POST: api(async (req) => {
+      const { repo } = (await req.json()) as { repo: string };
+      try { return Response.json(await startAgent({ item: `stop-check-${repo.split("/").pop()}`, repo, pr: null, kind: "custom", prompt: checkHookPrompt(repo), edited: false, bare: true })); }
+      catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
+    }) },
+    "/api/replays/grade": { POST: api(async (req) => {
+      const { ref, at, same } = (await req.json()) as { ref: string; at: string; same: boolean };
+      gradeReplay(ref, at, !!same);
+      return Response.json({ ok: true });
+    }) },
     "/api/lessons/stick": { POST: api(async (req) => {
       const { ref } = (await req.json()) as { ref: string };
       const l = allLessons().find((x) => x.ref === ref);
@@ -241,6 +254,14 @@ const server = Bun.serve({
         const { signal, repo, unattended, triage, done, context, video } = (await req.json()) as { signal: string; repo: string; unattended: boolean; video?: boolean; triage?: boolean; done?: string; context?: string };
         try { return Response.json(await (triage ? startTriage(repo) : startFromSignal(signal, repo, !!unattended, done ?? "", context ?? "", !!video))); }
         catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
+      }),
+    },
+    "/api/tracker": {
+      GET: api(() => Response.json(trackerState())),
+      POST: api(async (req) => {
+        const { repos } = (await req.json()) as { repos: string[] };
+        try { const r = await setupTracker(repos); void syncSuggestions().then(() => refresh()); return Response.json(r); }
+        catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
       }),
     },
     "/api/suggestions": api(() => Response.json(suggestionsView())),
@@ -362,6 +383,12 @@ const server = Bun.serve({
       }),
       POST: api(async () => { await syncHistory(); return Response.json({ syncedAt: historySyncedAt() }); }),
     },
+    "/api/loop/pulse": { POST: api(async (req) => {
+      const { score } = (await req.json()) as { score: number };
+      if (![1, 2, 3, 4, 5].includes(score)) return Response.json({ error: "score is 1 to 5" }, { status: 400 });
+      setPulse(score);
+      return Response.json({ ok: true });
+    }) },
     "/api/loop": {
       GET: api(() => Response.json(loopState())),
       POST: api(async () => {

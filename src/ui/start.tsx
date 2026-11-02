@@ -78,6 +78,7 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
     }
     if (!sig || !repo) return;
     if (existing?.agents.length && !another) { onFocus(existing.id); onClose(); return; }
+    if (sig.kind === "task" && !done.trim()) { toast("Say what done looks like first"); return; }
     setBusy(true);
     store(`cr-unattended-${sig.kind}`, unattended);
     const r = await post("/api/start", { signal: text, repo, unattended, video, ...(sig.kind === "task" && done.trim() ? { done } : {}),
@@ -89,7 +90,7 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
   return (
     <Sheet title="Start work" onClose={onClose}>
       <form onSubmit={(e) => { e.preventDefault(); void go(); }}>
-        <textarea className="field ask" autoFocus rows={4} placeholder={"What to work on, in your words.\nOr paste a Jira key or URL, Sentry issue or PostHog replay."}
+        <textarea className="field ask" autoFocus rows={4} placeholder={"What to work on, in your words.\nOr paste an issue key or link, an error report or a session replay."}
           value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void go(); }
@@ -101,20 +102,20 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
         )}
         {picked && (
           <div className="pick-steps">
-            {pickedArch ? <p className="st">Starts an agent that runs /grilling on this candidate in <b>{pickRepo}</b>. Nothing goes to Jira.</p> : <>
-              <label><input type="checkbox" checked={steps.assign} onChange={(e) => setSteps({ ...steps, assign: e.target.checked, move: e.target.checked && steps.move })} /> Assign {picked.key} to you in Jira</label>
-              <label><input type="checkbox" checked={steps.move} disabled={!steps.assign} onChange={(e) => setSteps({ ...steps, move: e.target.checked })} /> Move {picked.key} to In Progress{!steps.assign && " (needs Assign)"}</label>
+            {pickedArch ? <p className="st">Starts an agent that runs /grilling on this candidate in <b>{pickRepo}</b>. Nothing goes to the tracker.</p> : <>
+              <label><input type="checkbox" checked={steps.assign} onChange={(e) => setSteps({ ...steps, assign: e.target.checked, move: e.target.checked && steps.move })} /> Assign {picked.key} to you in the tracker</label>
+              {picked.tracker !== "github" && <label><input type="checkbox" checked={steps.move} disabled={!steps.assign} onChange={(e) => setSteps({ ...steps, move: e.target.checked })} /> Move {picked.key} to In Progress{!steps.assign && " (needs Assign)"}</label>}
               <label><input type="checkbox" checked={steps.agent} onChange={(e) => setSteps({ ...steps, agent: e.target.checked })} /> Start signal-to-pr on {picked.key} in
                 <select className="field inline" value={pickRepo} onChange={(e) => setPickRepo(e.target.value)}>
                   {s?.repos.map((r) => <option key={r.repo} value={r.repo}>{r.repo}</option>)}
                 </select></label>
-              {(steps.assign || steps.move) && <p className="st dim">Everyone watching {picked.key} sees the Jira changes.</p>}
+              {(steps.assign || steps.move) && <p className="st dim">Everyone watching {picked.key} sees the changes in the tracker.</p>}
             </>}
           </div>
         )}
         <p className="st dim" style={{ margin: "8px 0" }}>
           {picked ? <>⏎ picks up <b>{pickedArch ? picked.summary : picked.key}</b>. Esc or click it again to go back to triage.</>
-            : triage ? <>↑↓ to choose a suggestion. Left empty, ⏎ runs, ⏎ runs signal-to-pr's triage: {repo || "the repo"}'s live errors and slow endpoints as a menu to pick from, in a new agent tab.</>
+            : triage ? <>↑↓ to choose a suggestion. Left empty, ⏎ runs signal-to-pr's triage: {repo || "the repo"}'s live errors and slow endpoints as a menu to pick from, in a new agent tab.</>
             : !sig ? "Opens a new herdr tab with Claude in a fresh worktree. ⇧⏎ for a new line."
             : existing?.agents.length ? <><b>{sig.key}</b> already has an agent. ⏎ shows it; or start another.</>
             : sig.kind === "task" ? <>A task: Claude gets it as written, as <b>{sig.key}</b> on the board.{s?.why ? ` ${repo} is ${s.why}.` : ""}</>
@@ -125,7 +126,7 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
           {s?.repos.map((r) => <option key={r.repo} value={r.repo}>{r.repo}{r.profiled ? " · profiled" : ""}</option>)}
         </select>}
         {sig?.kind === "task" && (
-          <input className="field" style={{ marginTop: 10 }} placeholder="Done when (optional): what you'll check to call it finished" value={done} onChange={(e) => setDone(e.target.value)} />
+          <input className="field" style={{ marginTop: 10 }} placeholder="Done when: what you'll check to call it finished" value={done} onChange={(e) => setDone(e.target.value)} />
         )}
         {sig && sig.kind !== "task" && (<>
           <label className="st" style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
@@ -139,7 +140,7 @@ export function StartBox({ items, initial = "", context = "", sugs, onClose, onF
           {existing?.agents.length ? <button type="button" className="btn" disabled={busy || !repo} onClick={() => void go(true)}>Start another</button> : null}
           {picked
             ? <button className="btn primary" type="submit" disabled={busy || !pickRepo || (!pickedArch && !steps.assign && !steps.move && !steps.agent)}>{busy ? "Picking up…" : "Pick up"} <kbd>⏎</kbd></button>
-            : <button className="btn primary" type="submit" disabled={busy || (!sig && !triage) || !repo}>{existing?.agents.length ? "Show it" : busy ? "Starting…" : triage ? "Triage" : "Start"} <kbd>⏎</kbd></button>}
+            : <button className="btn primary" type="submit" disabled={busy || (!sig && !triage) || !repo || (sig?.kind === "task" && !existing?.agents.length && !done.trim())}>{existing?.agents.length ? "Show it" : busy ? "Starting…" : triage ? "Triage" : "Start"} <kbd>⏎</kbd></button>}
         </div>
       </form>
     </Sheet>

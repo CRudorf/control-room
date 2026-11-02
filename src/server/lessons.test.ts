@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { current, SHELF_MS, stickPrompt, withLesson, type Lesson } from "./lessons";
+import { current, dueStick, goneLessons, SHELF_MS, stickPrompt, withLesson, type Lesson } from "./lessons";
 import { lessonFiles } from "./shipped";
 
 const NOW = Date.parse("2030-06-01T00:00:00Z");
@@ -38,5 +38,19 @@ describe("lessons", () => {
     expect(p).toContain("https://example.test/pr/1");
     expect(p).toContain("`lesson/<short-slug>`");
     expect(p).toContain("Never merge");
+  });
+});
+
+describe("lesson upkeep", () => {
+  const l = (ref: string, over = {}) => ({ repo: "a/x", ref, text: ref, at: new Date().toISOString(), ...over });
+  test("the next to stick is the newest current one with no agent and a watched PR", () => {
+    const all = [l("a/x#1"), l("a/x#2"), l("a/x#3", { stick: { agent: "z", at: "" } }), l("a/x#4")];
+    expect(dueStick(all, [{ ref: "a/x#1" }, { ref: "a/x#2" }, { ref: "a/x#3" }])?.lesson.ref).toBe("a/x#2");
+    expect(dueStick([l("a/x#1", { at: "2000-01-01T00:00:00Z" })], [{ ref: "a/x#1" }])).toBeNull();
+  });
+  test("a lesson goes only when every cited file is known to be gone", () => {
+    const all = [l("a/x#1", { files: ["gone"] }), l("a/x#2", { files: ["gone", "here"] }), l("a/x#3", { files: ["unknown"] }), l("a/x#4")];
+    const exists = (_: string, f: string) => f === "here" ? true : f === "gone" ? false : null;
+    expect(goneLessons(all, exists).map((x) => x.ref)).toEqual(["a/x#1"]);
   });
 });

@@ -36,14 +36,14 @@ export function PickupSheet({ s, onClose, onDone }: { s: Suggestion; onClose: ()
   }, [s.key, arch]);
   return (
     <Confirm title={`Pick up ${arch ? s.summary : s.key}`} label="Pick up" onClose={onClose}
-      who={arch ? "Starts an agent that grills you on this candidate. Nothing goes to Jira." : `Everyone watching ${s.key} sees it assigned to you and moved to In Progress.`}
+      who={arch ? "Starts an agent that grills you on this candidate. Nothing goes to the tracker." : `Everyone watching ${s.key} sees it assigned to you and moved to In Progress.`}
       go={async () => {
         const r = await post("/api/suggestions/pickup", { key: s.key, repo });
         toast(r.error ? `Couldn't pick up ${s.key}: ${r.error}` : `Picked up ${arch ? s.summary : s.key}${r.dryRun ? " (dry run)" : ""}`);
         if (!r.error) onDone?.();
       }}>
       <ol className="sheet-list">
-        {!arch && <li>Assign {s.key} to you in Jira.</li>}
+        {!arch && <li>Assign {s.key} to you in the tracker.</li>}
         {!arch && <li>Move {s.key} to In Progress.</li>}
         <li>{arch ? "Start an agent on /grilling for this candidate" : `Start signal-to-pr on ${s.key}`} in <b>{repo || "…"}</b>.</li>
       </ol>
@@ -55,6 +55,32 @@ export function PickupSheet({ s, onClose, onDone }: { s: Suggestion; onClose: ()
 }
 
 const CHUNK = 15;
+
+/** Sets up GitHub Issues as this project's tracker. Only repos that pass the private word check are offered. */
+function TrackerSetup({ onDone }: { onDone: () => void }) {
+  const [t, setT] = useState<{ options: string[]; error: string | null } | null>(null);
+  const [on, setOn] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { void fetch("/api/tracker").then((x) => x.json()).then(setT).catch(() => {}); }, []);
+  const save = async () => {
+    setBusy(true);
+    const r = await post("/api/tracker", { repos: [...on] });
+    setBusy(false);
+    toast(r.error ? `Couldn't set it up: ${r.error}` : r.dryRun ? "Dry run: tracker set until restart" : "Tracker set up");
+    if (!r.error) onDone();
+  };
+  if (!t) return <div className="st dim sug-more">Loading…</div>;
+  return (
+    <div className="pick-steps">
+      <p className="st">No tracker yet. Use GitHub Issues from:</p>
+      {t.error && <p className="tidy-err">{t.error}</p>}
+      {t.options.map((r) => <label key={r}><input type="checkbox" checked={on.has(r)} onChange={(e) => { const n = new Set(on); if (e.target.checked) n.add(r); else n.delete(r); setOn(n); }} /> {r}</label>)}
+      {!t.options.length && !t.error && <p className="st dim">No repo in this project can be used.</p>}
+      <p className="st dim">Repos that name private work aren't offered.</p>
+      <button type="button" className="btn" disabled={busy || !on.size} onClick={() => void save()}>{busy ? "Checking…" : "Use these"}</button>
+    </div>
+  );
+}
 
 /** One row of the Start box's list. A click chooses it; ✕ dismisses it, with an optional reason. */
 function Row({ s, i, on, onPick, onDismissed }: { s: Suggestion; i: number; on: boolean; onPick: () => void; onDismissed: () => void }) {
@@ -72,7 +98,7 @@ function Row({ s, i, on, onPick, onDismissed }: { s: Suggestion; i: number; on: 
         <span className={`sug-src s-${s.source}`}>{SOURCE[s.source]}</span>
         {s.assignee === "me" && <span className="sug-src">yours</span>}
         <span className="t">{s.summary}</span>
-        {s.url && <a className="sug-open" href={s.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Open in Jira">↗</a>}
+        {s.url && <a className="sug-open" href={s.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Open the issue">↗</a>}
         {!asking && <button type="button" className="sug-x" title="Dismiss" onClick={(e) => { e.stopPropagation(); setAsking(true); }}>✕</button>}
       </div>
       {s.verdict && <div className={`sug-verdict v-${s.verdict}`}><b>{s.verdict}{s.of ? ` ${s.of}` : ""}</b> {s.reason}</div>}
@@ -122,7 +148,8 @@ export function SuggestionList({ view, reload, pick, onPick, listRef }: {
       <div className="sug-list" ref={listRef} role="listbox">
         {view.suggestions.slice(0, shown).map((s, i) => <Row key={s.key} s={s} i={i} on={i === pick} onPick={() => onPick(i)} onDismissed={reload} />)}
         {shown < total && <div ref={end} className="st dim sug-more">Loading more…</div>}
-        {!total && <div className="empty">Nothing to suggest.</div>}
+        {!total && view.tracker && <div className="empty">Nothing to suggest.</div>}
+        {!total && !view.tracker && <TrackerSetup onDone={reload} />}
       </div>
     </div>
   );

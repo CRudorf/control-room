@@ -10,10 +10,10 @@ const short = (ref: string) => ref.split("/").pop()!;
 const day = (iso: string) => new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 
 export const STATE: Record<Shipped["state"], [string, string]> = {
-  clean: ["Clean", "A week with nothing rewriting its lines, no revert, no unexplained CI failure or new Sentry issue"],
+  clean: ["Clean", "A week with nothing rewriting its lines, no revert, no unexplained CI failure or new error report"],
   watching: ["Watching", "Inside its first week; nothing found so far"],
   changed: ["Changed after", "Later commits rewrote lines it added, without saying they fix something"],
-  look: ["Needs a look", "CI failed after the merge (not obviously infrastructure) or new Sentry issues: evidence, not proof"],
+  look: ["Needs a look", "CI failed after the merge (not obviously infrastructure) or new error reports: evidence, not proof"],
   broke: ["Broke", "Reverted, a fix commit rewrote lines it added, or you confirmed it"],
 };
 
@@ -28,7 +28,7 @@ export function AfterMerge({ prs, watch, onOpen }: { prs: Pr[]; watch: Map<strin
     <div className="aftermerge">
       <div className="st">After merge: <b className="ok">{count("clean")} clean</b> · {count("watching")} watching · <b className="warn">{count("changed")} changed</b> · <b className="warn">{count("look")} need a look</b> · <b className="pen">{count("broke")} broke</b>
         {unruled > 0 && <span className="dim"> · {unruled} not yet verified</span>}
-        {!ws.some((w) => w.sentry !== null) && <span className="dim" title="Add auth_token to ~/.claude/sentry-config.yaml"> · Sentry not connected</span>}</div>
+        {!ws.some((w) => w.sentry !== null) && <span className="dim" title="Add auth_token to ~/.claude/sentry-config.yaml"> · Error reports not connected</span>}</div>
       {open.map((w) => (
         <button key={w.ref} className="amw" onClick={() => onOpen(w.ref)} title="See the evidence and give your verdict">
           <span className="amt"><i className={`dot ${w.state}`} /><span className="r">{short(w.ref)}</span>{w.title}</span>
@@ -46,7 +46,7 @@ function summary(w: Shipped): string {
     fixes && `${fixes} fix commit${fixes > 1 ? "s" : ""} rewrote its lines`,
     w.rework.length - fixes && `${w.rework.length - fixes} later commit${w.rework.length - fixes > 1 ? "s" : ""} rewrote its lines`,
     w.ciFailures.length && `${w.ciFailures.length} check${w.ciFailures.length > 1 ? "s" : ""} failed after the merge${w.ciFailures.every((f) => f.suspect) ? ", likely not the code" : ""}`,
-    w.sentry?.length && `${w.sentry.length} new Sentry issue${w.sentry.length > 1 ? "s" : ""}`,
+    w.sentry?.length && `${w.sentry.length} new error report${w.sentry.length > 1 ? "s" : ""}`,
   ].filter(Boolean).join(" · ") || STATE[w.state][1];
 }
 
@@ -114,7 +114,7 @@ export function ShippedSheet({ w, onClose, onChanged }: { w: Shipped; onClose: (
         )}
 
         {w.sentry && w.sentry.length > 0 && (
-          <Section title="New Sentry issues through its files">{w.sentry.map((s) => <div key={s.sha}><a href={s.url} target="_blank" rel="noreferrer">{s.sha}: {s.text}</a> <span className="st dim">{s.file} · first seen {day(s.at)}</span></div>)}</Section>
+          <Section title="New error reports through its files">{w.sentry.map((s) => <div key={s.sha}><a href={s.url} target="_blank" rel="noreferrer">{s.sha}: {s.text}</a> <span className="st dim">{s.file} · first seen {day(s.at)}</span></div>)}</Section>
         )}
 
         <Section title="Verdict">

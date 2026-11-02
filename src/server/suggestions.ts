@@ -12,6 +12,7 @@ import { load, save } from "./db";
 import { isDev, note, read, type Ctx } from "./runner";
 import { SETTINGS } from "./settings";
 import { assignToMe, moveIssue } from "./jira";
+import { assignIssue, repoOfKey, syncTracker, trackerKind } from "./tracker";
 import { prFacts } from "./history";
 import { weekOf } from "./metrics";
 
@@ -156,7 +157,7 @@ function enriched(): Suggestion[] {
 
 export function suggestionsView(): SuggestionsView {
   return {
-    suggestions: rankSuggestions(enriched(), load<Dismissed>("suggest_dismissed") ?? {}), error,
+    tracker: trackerKind(), suggestions: rankSuggestions(enriched(), load<Dismissed>("suggest_dismissed") ?? {}), error,
     judgedAt: load<Verdicts>("suggest_verdicts")?.at ?? null, archAt: load<ArchRun>("suggest_arch")?.at ?? null,
   };
 }
@@ -164,7 +165,6 @@ export function suggestionsView(): SuggestionsView {
 /** Fetches the Jira sources for every configured project. */
 export async function syncSuggestions(): Promise<void> {
   const projects = SETTINGS.jiraProjects?.length ? SETTINGS.jiraProjects : [];
-  if (!projects.length) { error = "no jiraProjects in ~/.config/control-room/config.json"; return; }
   const sprints = SETTINGS.jiraSuggestSprints ?? [];
   const label = SETTINGS.jiraSuggestLabel ?? "";
   try {
@@ -173,6 +173,7 @@ export async function syncSuggestions(): Promise<void> {
       const out = await read(["python3", JIRA, "suggest", "--project", p, "--sprints", sprints.join(","), "--label", label, "--max", "20"]);
       all.push(...(JSON.parse(out).issues as Raw[]));
     }
+    all.push(...await syncTracker());
     raw = all;
     save("suggest_raw", raw);
     error = null;
@@ -260,8 +261,9 @@ export async function pickupSuggestion(key: string, repo: string, deps: { start:
   if (move && !assign) throw new Error(`Move to In Progress needs Assign: tick Assign too, or leave Move out`);
   const picked = load<Picked>("suggest_picked") ?? {};
   save("suggest_picked", { ...picked, [key]: { at: new Date().toISOString(), summary: s.summary, url: s.url } });
-  if (assign) await assignToMe(ctx, key);
-  if (move) await moveIssue(ctx, key, "In Progress");
+  const github = !!repoOfKey(key);
+  if (assign) await (github ? assignIssue(ctx, key) : assignToMe(ctx, key));
+  if (move && !github) await moveIssue(ctx, key, "In Progress");
   if ((assign || move) && !isDev()) deps.refresh();
   return agent ? deps.start(key, repo) : { key, started: false };
 }

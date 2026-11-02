@@ -1,13 +1,13 @@
 // Groups PR rows into work items and decides each one's lane. Pure: no I/O past reading settings once.
 import type { Agent, Cell, FinishedItem, Dependency, Hold, ItemBranch, Issue, Lane, Move, NextStep, Park, PrRow, Reason, Run, Suggested, WorkItem } from "../shared/types";
 import { prRef } from "../shared/types";
-import { SETTINGS } from "./settings";
+import { SETTINGS, KNOWN_PROJECTS } from "./settings";
 import { branchLine } from "../shared/branches";
 import { reachedLast, outcomeOf, acceptanceLane } from "./acceptance";
 
 // Branch names are lowercase and full of words-with-numbers, so a branch only
 // yields a Jira key for a project already seen in a title, or one in settings.
-export const KNOWN_PROJECTS = SETTINGS.jiraProjects ?? [];
+export { KNOWN_PROJECTS };
 
 export { errorKey, trackerKey } from "./keys";
 import { ERROR_ID, errorKey, trackerKey } from "./keys";
@@ -493,7 +493,7 @@ export function applyJira(items: WorkItem[], issues: Map<string, Issue>, ctx: Ji
     if (ACCEPTANCE.has(j.status.toLowerCase())) continue;
     // In review, parked or blocked with no PR open: nothing to do here.
     if (j.category !== "indeterminate" || PAST.test(j.status)) continue;
-    const why = bs.length ? `${j.status} in Jira · ${branchLine(bs)}` : `${j.status} in Jira, no PR yet`;
+    const why = bs.length ? `${j.status} in the tracker · ${branchLine(bs)}` : `${j.status} in the tracker, no PR yet`;
     out.push({ ...base, lane: "mine", why, urgency: 1, primary: { label: `Start ${j.key}`, start: j.url } });
   }
   return out;

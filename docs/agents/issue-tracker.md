@@ -1,6 +1,8 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Issues and specs for this repo live as GitHub issues on `CRudorf/control-room`, which is public. Use the `gh` CLI for all operations.
+
+**Do not name an employer, org, customer or work project in an issue, a comment or a label.** `scripts/issue-guard.py` blocks an issue write that has a private word. It cannot see text in a shell variable, so write issue text directly in the command or in a body file.
 
 ## Conventions
 
@@ -12,7 +14,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
-Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
+Pass `-R CRudorf/control-room` on every command. Do not infer the repo from `git remote -v`: `origin` is a private repo.
 
 ## Pull requests as a triage surface
 

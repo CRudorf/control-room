@@ -1,3 +1,4 @@
+import { post } from "./actions";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import type { TidyTab } from "../shared/types";
@@ -25,6 +26,8 @@ export function Tidy({ onClose }: { onClose: () => void }) {
   const [machine, setMachine] = useState<{ totalGb: number; freePct: number | null; low: boolean } | null>(null);
   const [heaviest, setHeaviest] = useState(false);
   const [guardrails, setGuardrails] = useState<string[]>([]);
+  const [noChecks, setNoChecks] = useState<string[]>([]);
+  const [addedCheck, setAddedCheck] = useState<Set<string>>(new Set());
 
   const load = async () => {
     const r = await fetch("/api/tidy").then((x) => x.json()).catch(() => ({ error: "server unreachable" }));
@@ -33,6 +36,7 @@ export function Tidy({ onClose }: { onClose: () => void }) {
     setClosed(r.closed);
     setMachine(r.machine ?? null);
     setGuardrails(r.guardrails ?? []);
+    setNoChecks(r.noChecks ?? []);
     setPicked(new Set(r.tabs.filter((t: TidyTab) => t.suggest).map((t: TidyTab) => t.tab)));
   };
   useEffect(() => { void load(); }, []);
@@ -77,6 +81,16 @@ export function Tidy({ onClose }: { onClose: () => void }) {
             <details className="st guardline">
               <summary>Guardrails: {guardrails.length} gap{guardrails.length === 1 ? "" : "s"} in Claude Code settings or branch protection</summary>
               <ul>{guardrails.map((g) => <li key={g}>{g}</li>)}</ul>
+            </details>
+          )}
+          {noChecks.length > 0 && (
+            <details className="st guardline">
+              <summary>Stop checks: {noChecks.length} repo{noChecks.length === 1 ? "" : "s"} let agents finish without running checks</summary>
+              <ul>{noChecks.map((r) => <li key={r}>{r} <button className="btn" disabled={addedCheck.has(r)} title="An agent adds a Stop hook that runs the repo's typecheck and fast tests, and opens a draft PR" onClick={async () => {
+                const x = await post("/api/checks/add", { repo: r });
+                if (x.error) return setErr(x.error);
+                setAddedCheck((s) => new Set(s).add(r));
+              }}>{addedCheck.has(r) ? "Started" : "Add it"}</button></li>)}</ul>
             </details>
           )}
         </div>

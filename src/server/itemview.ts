@@ -15,7 +15,7 @@ export const MAX_CHARS = 11_000;
 export function findItem(items: WorkItem[], q: string): WorkItem | null {
   const s = q.trim().toLowerCase();
   if (!s) return null;
-  const hit = items.find((it) => it.id === s || it.key.toLowerCase() === s);
+  const hit = items.find((it) => it.id === s || it.key.toLowerCase() === s || it.prs.some((p) => p.branch?.toLowerCase() === s));
   if (hit) return hit;
   const ref = s.match(/([\w.-]+)\/pull\/(\d+)/) ?? s.match(/([\w.-]+)#(\d+)$/);
   if (!ref) return null;
@@ -44,7 +44,7 @@ function prLines(p: PrRow): string[] {
 }
 
 /** The plain-text view: key and lane, PRs with their status and open feedback, the loop, lessons, agents. */
-export function formatItem(it: WorkItem, lessons: Lesson[]): string {
+export function formatItem(it: WorkItem, lessons: Lesson[], checks: string[] = []): string {
   const out = [`${it.key} (${it.title ? clip(it.title, 100) : it.keyKind}): ${LANE[it.lane]}, ${it.why}`];
   if (it.jira) out.push(`Jira: ${it.jira.status} ${it.jira.url}`);
   if (it.park) out.push(`Parked: ${clip(it.park.note, 160)}${it.park.until ? ` until ${it.park.until}` : ""}`);
@@ -53,6 +53,7 @@ export function formatItem(it: WorkItem, lessons: Lesson[]): string {
   out.push("", it.prs.length ? `PRs (${it.prs.length}):` : "No PRs yet.");
   for (const p of it.prs) out.push(...prLines(p));
   for (const l of it.loop ?? []) if (l.state !== "off") out.push(`Review loop on ${l.ref}: ${l.state}${l.why && l.why !== `loop ${l.state}` ? `, ${clip(l.why, 160)}` : ""}`);
+  out.push(...checks);
   if (lessons.length) {
     out.push("", `Lessons for ${it.repos.join(", ")} (check the change against these):`);
     out.push(...lessons.map((l) => `- ${clip(l.text, 240)} (${l.ref})`));

@@ -1,3 +1,5 @@
+import { trackerIssues } from "./tracker";
+import { checksFor } from "./checks";
 import { SETTINGS } from "./settings";
 import { PROJECT } from "./repos";
 // Keeps the board's PR rows fresh and tells subscribers when the board changes.
@@ -231,13 +233,13 @@ export function snapshot(): Snapshot {
     if (d && !(p.head.startsWith(d.sha) || d.sha.startsWith(p.head))) drafts.delete(ref);
   }
   const grouped = groupWorkItems(all.map(withBehind).map(withStack(all)), h.agents, holds(), reranHeads(), drafts, moves(), new Set([...shutGates(gs, done), ...running(loopsNow())]));
-  const issues = jiraIssues();
+  const issues = new Map([...jiraIssues(), ...trackerIssues()]);
   const ef = efforts();
   const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs }), pickedNow(), issues), gs, done), runs());
   const items = sortItems(rankNext(applyGuides(applyParks(applyLoop(blocked, views(blocked, loopsNow())), parks()))))
     .map((it) => {
-      const u = usageFor(it), a = artifactsFor(it), e = ef.get(it.key);
-      return { ...it, ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
+      const u = usageFor(it), a = artifactsFor(it), e = ef.get(it.key), c = checksFor(it.prs);
+      return { ...it, ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
     });
   const today = db.query<FinishedRow, [string]>("SELECT * FROM finished WHERE at >= ? ORDER BY at").all(midnight());
   const finished = finishedToday(today, items, featureOf, midnight())

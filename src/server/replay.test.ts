@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Shipped } from "../shared/types";
 import type { Lesson } from "./lessons";
-import { breakFiles, caught, lessonsBefore, replayPrompt } from "./replay";
+import { breakFiles, candidates, grade, lessonsBefore, replayPrompt } from "./replay";
 
 const hit = (over = {}) => ({ sha: "s", at: "2030-01-09T00:00:00Z", text: "fix the total", url: "u", ...over });
 const w = (over: Partial<Shipped> = {}): Shipped => ({
@@ -16,11 +16,18 @@ describe("replay", () => {
     expect(breakFiles(w({ reverts: [hit()] }))).toEqual(["src/cart.ts", "src/total.ts"]);
     expect(breakFiles(w({ rework: [hit({ file: "src/cart.ts" })] }))).toEqual(["src/cart.ts"]);
   });
-  test("a finding in a file the break was in is a catch", () => {
-    expect(caught([{ path: "src/total.ts" }], ["src/total.ts"])).toBe(true);
-    expect(caught([{ path: "total.ts" }], ["src/total.ts"])).toBe(true);
-    expect(caught([{ path: "src/cart.ts" }, {}], ["src/total.ts"])).toBe(false);
-    expect(caught([], ["src/total.ts"])).toBe(false);
+  test("a candidate is a finding above a nit in a file the break was in", () => {
+    expect(candidates([{ path: "src/total.ts" }], ["src/total.ts"])).toHaveLength(1);
+    expect(candidates([{ path: "total.ts" }], ["src/total.ts"])).toHaveLength(1);
+    expect(candidates([{ path: "src/total.ts", rank: "nit" }], ["src/total.ts"])).toEqual([]);
+    expect(candidates([{ path: "src/cart.ts" }, {}], ["src/total.ts"])).toEqual([]);
+  });
+  test("no candidates is a miss; candidates wait for the user's call on that run", () => {
+    expect(grade([], undefined, "t1")).toBe(false);
+    expect(grade([{}], undefined, "t1")).toBeNull();
+    expect(grade([{}], { at: "t1", same: true }, "t1")).toBe(true);
+    expect(grade([{}], { at: "t1", same: false }, "t1")).toBe(false);
+    expect(grade([{}], { at: "t0", same: true }, "t1")).toBeNull();
   });
   test("replays with the lessons from before the merge, its own left out", () => {
     const all = [l("acme/widgets#1", "2029-12-01T00:00:00Z"), l("acme/widgets#7", "2030-01-10T00:00:00Z"), l("acme/widgets#9", "2030-01-20T00:00:00Z"), l("acme/widgets#2", "2029-01-01T00:00:00Z")];

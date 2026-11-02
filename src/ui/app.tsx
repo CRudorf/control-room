@@ -581,7 +581,7 @@ function Strip({ it, sel, unseen, onClick }: { it: Group["items"][number]; sel: 
 const plain = (md: string) => md.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, "").replace(/\*\*|__|`/g, "")
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
 
-const KIND: Record<WorkItem["keyKind"], string> = { jira: "Jira issue", sentry: "Sentry issue", branch: "branch", review: "review request", agent: "agent" };
+const KIND: Record<WorkItem["keyKind"], string> = { jira: "issue", sentry: "error report", branch: "branch", review: "review request", agent: "agent" };
 
 /** ⏎ on a work item. */
 export function runPrimary(it: WorkItem) {
@@ -689,6 +689,7 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
           {it.prs.filter((p) => p.taken_over).map((p) => <span key={p.number} className="note">#{p.number} taken over from {p.taken_over!.from}</span>)}
         </div>
         <div><h1>{it.title}</h1><div className="why">{it.lane === "mine" ? <b>{it.why}</b> : it.why}</div>
+          {it.stopChecks?.map((c) => <div key={c.branch} className={`st ${c.ok ? "dim" : ""}`} title={c.commands.map((x) => `${x.command}: exit ${x.exit}`).join("\n")}>Stop checks {c.ok ? "passed" : "failed"} on {c.branch} at {c.sha.slice(0, 8)}: {c.commands.filter((x) => c.ok || x.exit !== 0).map((x) => `${x.command} (exit ${x.exit})`).join(", ")}</div>)}
           {it.loop && <LoopLines it={it} />}
           {it.guide && <GuideLines it={it} />}
           {it.artifacts && <Artifacts list={it.artifacts} />}

@@ -37,7 +37,7 @@ export function Quality({ weeks }: { weeks: Week[] }) {
   const [shipped, setShipped] = useState<Shipped[]>([]);
   const [pick, setPick] = useState<Pick | null>(null);
   const reload = () => fetch("/api/shipped").then((x) => x.json()).then((r) => r.shipped && setShipped(r.shipped)).catch(() => {});
-  const [replays, setReplays] = useState<{ replays: { ref: string; caught: boolean }[]; waiting: number } | null>(null);
+  const [replays, setReplays] = useState<{ replays: { ref: string; at: string; caught: boolean | null; candidates: { path: string; title: string }[]; lesson: string | null }[]; waiting: number } | null>(null);
   const reloadReplays = () => fetch("/api/replays").then((x) => x.json()).then((r) => r.replays && setReplays(r)).catch(() => {});
   useEffect(() => { void reload(); void reloadReplays(); }, []);
   const replay = async (again: boolean) => {
@@ -45,7 +45,14 @@ export function Quality({ weeks }: { weeks: Week[] }) {
     toast(r.error ? `Couldn't start: ${r.error}` : r.started.length ? `Replaying ${r.started.length} confirmed break${r.started.length > 1 ? "s" : ""}; the catch rate updates when they finish` : "Nothing to replay");
     void reloadReplays();
   };
-  const caughtN = replays?.replays.filter((r) => r.caught).length ?? 0;
+  const caughtN = replays?.replays.filter((r) => r.caught === true).length ?? 0;
+  const gradedN = replays?.replays.filter((r) => r.caught !== null).length ?? 0;
+  const toGrade = replays?.replays.filter((r) => r.caught === null) ?? [];
+  const gradeIt = async (ref: string, at: string, same: boolean) => {
+    const r = await post("/api/replays/grade", { ref, at, same });
+    if (r.error) toast(`Couldn't save: ${r.error}`);
+    void reloadReplays();
+  };
   const lastWeeks = last.map((w) => w.week);
   const open = (title: string, weeks: string[], keep: Pick["keep"]) => setPick({ title, weeks, keep });
   const picked = pick ? shipped.filter((w) => pick.weeks.includes(weekOf(w.merged)) && pick.keep(w)).sort((a, b) => b.merged.localeCompare(a.merged)) : [];
@@ -57,7 +64,7 @@ export function Quality({ weeks }: { weeks: Week[] }) {
         <Stat name="Shipped clean" tone="done" v={pct(sum((w) => w.shipped.clean), settled)} note={`${settled} past their week; ${sum((w) => w.shipped.watching)} still watched`} onOpen={() => open("Merged in the last 4 weeks", lastWeeks, () => true)} />
         <Stat name="Broke after merge" tone="closed" v={String(sum((w) => w.shipped.broke))} note={`${sum((w) => w.confirmed)} confirmed by you · ${sum((w) => w.shipped.look)} need a look · ${sum((w) => w.shipped.changed)} changed after`} onOpen={() => open("Broke, need a look, or changed after: last 4 weeks", lastWeeks, flagged)} />
         <Stat name="Watch accuracy" tone="nudge" v={pct(sum((w) => w.confirmed), ruled_)} note={ruled_ ? `of ${ruled_} findings you ruled on, real` : "rule on findings to measure it"} onOpen={() => open(ruled_ ? "Findings you ruled on: last 4 weeks" : "Findings to rule on: last 4 weeks", lastWeeks, ruled_ ? ruled : flagged)} />
-        <Stat name="Self-review catch rate" tone="skip" v={pct(caughtN, replays?.replays.length ?? 0)} note={replays?.replays.length ? `of ${replays.replays.length} confirmed breaks replayed, flagged in the files that broke` : "replay confirmed breaks to measure it"} />
+        <Stat name="Self-review catch rate" tone="skip" v={pct(caughtN, gradedN)} note={replays?.replays.length ? `of ${gradedN} graded breaks, the same bug found${toGrade.length ? `; ${toGrade.length} to grade` : ""}` : "replay confirmed breaks to measure it"} />
         <Stat name="CI failed before merge" tone="rounds" v={pct(sum((w) => w.ciFailedPrs), sum((w) => w.merged))} note="merged PRs with a red commit" />
         <Stat name="Agents needing you" tone="sessions" v={agents ? (touches / agents).toFixed(1) : "–"} note={`touches per agent, ${agents} started`} />
         <Stat name="Loop finished alone" tone="bot" v={pct(rounds, rounds + stops)} note={`${rounds} rounds, ${stops} handed back`} />
@@ -70,6 +77,16 @@ export function Quality({ weeks }: { weeks: Week[] }) {
           <span className="st dim">self-review on the PR as it merged, without its own lesson</span>
         </div>
       )}
+      {toGrade.map((r) => (
+        <div key={r.ref} className="st" style={{ margin: "8px 0" }}>
+          <b>{r.ref}</b>{r.lesson ? <> broke: {r.lesson}</> : " broke"}. The replay flagged:
+          <ul style={{ margin: "4px 0" }}>{r.candidates.map((c, i) => <li key={i}>{c.path}: {c.title}</li>)}</ul>
+          <div className="row-acts">
+            <button className="btn" onClick={() => void gradeIt(r.ref, r.at, true)}>Same bug</button>
+            <button className="btn" onClick={() => void gradeIt(r.ref, r.at, false)}>Something else</button>
+          </div>
+        </div>
+      ))}
       <table className="mtable">
         <thead><tr><th>Week</th><th className="n">Merged</th><th className="n">CI failed</th><th className="n">Clean</th><th className="n">Changed</th><th className="n">Look</th><th className="n">Broke</th><th className="n">Confirmed</th><th className="n">Agents</th><th className="n">Touches</th><th className="n">Loop rounds</th><th className="n">Handed back</th></tr></thead>
         <tbody>

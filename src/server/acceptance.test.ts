@@ -82,7 +82,7 @@ describe("applyJira and product testing", () => {
   });
   test("an In Progress issue with a branch shows the branch, not no PR yet", () => {
     const [it] = applyJira([], new Map([["ABC-5", issue({ key: "ABC-5", status: "In Progress", testing: undefined })]]), { branchesFor: () => [br({ name: "ABC-5" })] });
-    expect(it.why).toBe("In Progress in Jira · ABC-5 · on staging, not on master");
+    expect(it.why).toBe("In Progress in the tracker · ABC-5 · on staging, not on master");
     expect(it.branches?.length).toBe(1);
   });
 });

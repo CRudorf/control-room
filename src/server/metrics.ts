@@ -236,3 +236,14 @@ export function quality(prs: PrFacts[], records: QualityRecord[], shipped: Pick<
   }
   return [...weeks.values()].sort((a, b) => a.week.localeCompare(b.week));
 }
+
+/** Per repo, merged PRs watched and how many were reverted. Per repo and never blended, as DORA asks. */
+export function revertsByRepo(ws: { ref: string; repo?: string | null; reverts: unknown[] }[]) {
+  const out: Record<string, { merged: number; reverted: number }> = {};
+  for (const w of ws) {
+    const r = (out[w.repo ?? w.ref.split("#")[0]] ??= { merged: 0, reverted: 0 });
+    r.merged++;
+    if (w.reverts.length) r.reverted++;
+  }
+  return out;
+}

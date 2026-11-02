@@ -1,3 +1,4 @@
+import { issueUrl, keyOfUrl, repoOfKey } from "./tracker";
 import { CLAUDE_DIR } from "./repos";
 // Starting work from the Start box: a signal (a Jira issue, a Sentry issue or a PostHog replay)
 // runs the signal-to-pr skill in a new herdr tab; anything else is a task, sent to Claude as written.
@@ -11,7 +12,7 @@ import { prFacts } from "./history";
 import { trackerKey, errorKey } from "./workitems";
 import { addRun } from "./runs";
 
-export type SignalKind = "jira" | "sentry" | "posthog" | "task";
+export type SignalKind = "github" | "jira" | "sentry" | "posthog" | "task";
 export type Signal = { kind: SignalKind; key: string; text: string };
 
 const SKILL = join(CLAUDE_DIR, "skills", "signal-to-pr", "SKILL.md");
@@ -27,6 +28,8 @@ export function parseSignal(raw: string): Signal | null {
   const text = raw.trim();
   if (!text) return null;
   if (/\s/.test(text)) return taskOf(text);
+  const gh = keyOfUrl(text) ?? (repoOfKey(text) ? text.toUpperCase() : null);
+  if (gh) return { kind: "github", key: gh, text: issueUrl(gh)! };
   const sentryShort = errorKey(text);
   if (sentryShort) return { kind: "sentry", key: sentryShort, text };
   const sentryUrl = text.match(/sentry\.io\/(?:organizations\/[^/]+\/)?issues\/(\d+)/);
@@ -81,9 +84,10 @@ export function taskPrompt(text: string, done = ""): string {
 
 export function prompt(sig: Signal, unattended: boolean, done = "", context = "", skill = existsSync(SKILL), video = false): string {
   if (sig.kind === "task") return taskPrompt(sig.text, done);
-  const ctx = context.trim() ? `\n\nContext: ${context.trim()}` : "";
+  const branch = sig.kind === "github" ? `\n\nName the branch after ${sig.key}, so it joins this work item.` : "";
+  const ctx = (context.trim() ? `\n\nContext: ${context.trim()}` : "") + branch;
   if (skill) return `/signal-to-pr ${sig.text}${unattended ? " unattended" : ""}${video ? " video" : ""}${ctx}`;
-  const what = { jira: "Jira issue", sentry: "Sentry issue", posthog: "PostHog session replay" }[sig.kind];
+  const what = { github: "GitHub issue", jira: "Jira issue", sentry: "Sentry issue", posthog: "PostHog session replay" }[sig.kind];
   return `Start work from this ${what}: ${sig.text}\n\nRead it first (jira skill for Jira, the Sentry tools for Sentry). Find the root cause in this repo, cut a branch off the latest main named after ${sig.key}, fix it with tests, and stop before pushing: show me the root cause and the change, and wait for my go-ahead.${ctx}`;
 }
 
@@ -91,6 +95,7 @@ export function prompt(sig: Signal, unattended: boolean, done = "", context = ""
 export async function startFromSignal(raw: string, repo: string, unattended: boolean, done = "", context = "", video = false) {
   const sig = parseSignal(raw);
   if (!sig) throw new Error("nothing to start");
+  if (sig.kind === "task" && !done.trim()) throw new Error("say what done looks like");
   const r = await startAgent({ item: sig.key, repo, pr: null, kind: "custom", prompt: prompt(sig, unattended, done, context, existsSync(SKILL), video), edited: false });
   // An unattended run hands back for review when its agent finishes.
   if (unattended && sig.kind !== "task") addRun(sig.key, r.name);

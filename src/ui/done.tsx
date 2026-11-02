@@ -55,7 +55,7 @@ function asText(d: Data, label: string) {
     `Accomplished, ${label.toLowerCase()}`,
     ...prs("Merged", d.merged), ...prs("Opened", d.opened),
     ...(d.reviewed.length ? [`Reviewed (${d.reviewed.length})`, ...d.reviewed.map((r) => `  ${short(r.ref)} ${r.title}, ${r.author}: ${r.verdict}`)] : []),
-    ...(d.jira.length ? [`Jira (${d.jira.length})`, ...d.jira.map((j) => `  ${j}`)] : []),
+    ...(d.jira.length ? [`Issues (${d.jira.length})`, ...d.jira.map((j) => `  ${j}`)] : []),
     `${d.commits} commits across ${d.repos.join(", ") || "no repos"}`,
   ].join("\n");
 }
@@ -118,7 +118,7 @@ export function Accomplished() {
                     <span className={`st ${r.verdict === "approved" ? "ok" : r.verdict === "changes requested" ? "pen" : "dim"}`}>{r.author} · {r.verdict}{r.comments ? ` · ${r.comments} comment${r.comments === 1 ? "" : "s"}` : ""}</span></li>
                 ))}
               </ul>
-              {d.jira.length > 0 && <><h4>Jira <span className="c">{d.jira.length}</span></h4><ul className="donelist">{d.jira.map((j, i) => <li key={i}>{j}</li>)}</ul></>}
+              {d.jira.length > 0 && <><h4>Issues <span className="c">{d.jira.length}</span></h4><ul className="donelist">{d.jira.map((j, i) => <li key={i}>{j}</li>)}</ul></>}
               <div className="st dim doneloop">
                 Through the control room: {n(d.reviewsPosted, "review")} posted{d.commentsPosted ? ` with ${n(d.commentsPosted, "inline comment")}` : ""}, {n(d.replies, "reply", "replies")} sent, {n(d.resolved, "thread")} resolved, {n(d.rerequests, "re-request")}, {n(d.loopRounds, "review loop round")}.
                 {d.repos.length > 0 && ` Repos: ${d.repos.join(", ")}.`}

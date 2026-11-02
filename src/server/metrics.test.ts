@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { factsOf, features, friction, historyNotReady, median, quality, stageTimes, weekly, weekOf, type PrFacts } from "./metrics";
+import { revertsByRepo, factsOf, features, friction, historyNotReady, median, quality, stageTimes, weekly, weekOf, type PrFacts } from "./metrics";
 
 const user = (login: string) => ({ __typename: "User", login });
 const bot = (login: string) => ({ __typename: "Bot", login });
@@ -161,4 +161,9 @@ describe("quality", () => {
     expect(q).toHaveLength(1);
     expect(q[0]).toMatchObject({ merged: 2, ciFailedPrs: 1, agents: 1, selfReviews: 1, touches: 2, loopRounds: 2, loopPushed: 1, loopStops: 1, shipped: { clean: 1, broke: 1, watching: 0, changed: 0, look: 0 }, confirmed: 1, dismissed: 1 });
   });
+});
+
+test("reverts count per repo, never blended", () => {
+  expect(revertsByRepo([{ ref: "a/x#1", repo: "a/x", reverts: [{}] }, { ref: "a/x#2", repo: "a/x", reverts: [] }, { ref: "a/y#3", reverts: [] }]))
+    .toEqual({ "a/x": { merged: 2, reverted: 1 }, "a/y": { merged: 1, reverted: 0 } });
 });

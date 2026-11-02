@@ -143,7 +143,7 @@ export function MoveSheet({ it, items, onClose }: { it: WorkItem; items: WorkIte
           <option value="split">Its own work item</option>
           {targets.map((x) => <option key={x.id} value={x.id}>Into {x.key} · {x.title}</option>)}
         </select>
-        <p className="st dim" style={{ margin: "8px 0 0" }}>Kept here only; nothing changes on GitHub or Jira.</p>
+        <p className="st dim" style={{ margin: "8px 0 0" }}>Kept here only; nothing changes on GitHub or in the tracker.</p>
         <div className="row">
           {moved && <button type="button" className="btn" onClick={() => void go(true)}>Put back</button>}
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
