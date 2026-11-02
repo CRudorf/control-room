@@ -62,6 +62,25 @@ describe("stop-check.sh", () => {
     expect(c.ok).toBe(true);
     expect(checkLine(c)).toContain("passed");
     expect(checksFor([{ repo: `acme/${short}`, branch: "feat/x" }, { repo: short, branch: "feat/x" }], dir)).toHaveLength(1);
+    expect(c.running).toBe(false);
+  });
+  test("while the checks run, the record says running; the result replaces it", () => {
+    const dir = folder();
+    // The check reads the record the hook wrote before it ran the commands.
+    const d = repo(`cat "${dir}"/*.json > "${dir}/seen.txt"\n`);
+    writeFileSync(join(d, "new.txt"), "x");
+    expect(run(d, dir).code).toBe(0);
+    expect(JSON.parse(readFileSync(join(dir, "seen.txt"), "utf8"))).toMatchObject({ running: true, ok: true, commands: [] });
+    const short = readdirSync(dir).find((f) => f.endsWith(".json"))!.split("__")[0];
+    expect(readCheck(`acme/${short}`, "feat/x", dir)).toMatchObject({ running: false, ok: true });
+  });
+  test("a run that never finished stops counting after a while", () => {
+    const dir = folder(), at = "2030-01-01T00:00:00Z";
+    writeFileSync(join(dir, "widgets__feat_x.json"), JSON.stringify({ repo: "widgets", branch: "feat/x", sha: "abc12345", at, ok: true, running: true, commands: [] }));
+    const c = readCheck("acme/widgets", "feat/x", dir, Date.parse(at) + 60_000)!;
+    expect(c.running).toBe(true);
+    expect(checkLine(c)).toContain("running");
+    expect(readCheck("acme/widgets", "feat/x", dir, Date.parse(at) + 11 * 60_000)).toBeNull();
   });
 });
 

@@ -15,6 +15,19 @@ if [ -z "$(git status --porcelain)" ] && { [ -z "$base" ] || [ "$(git rev-parse 
 
 json() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r\t'; }
 
+dir="${CR_CHECKS_DIR:-$HOME/.config/control-room/checks}"
+repo=$(basename "$(git remote get-url origin 2>/dev/null || printf '%s' "$root")" .git)
+branch=$(git rev-parse --abbrev-ref HEAD)
+name=$(printf '%s__%s' "$repo" "$branch" | tr '/' '_')
+# record ok running commands: the board shows the checks as running until the result replaces this.
+record() {
+  [ -d "$dir" ] || return 0
+  printf '{"repo":"%s","branch":"%s","sha":"%s","at":"%s","ok":%s,"running":%s,"commands":[%s]}\n' \
+    "$(json "$repo")" "$(json "$branch")" "$(git rev-parse HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" > "$dir/$name.json.tmp" \
+    && mv "$dir/$name.json.tmp" "$dir/$name.json"
+}
+record true true ""
+
 ok=true
 ran=""
 failed=""
@@ -31,15 +44,7 @@ $(printf '%s\n' "$out" | tail -n 30)
   fi
 done < .claude/stop-checks
 
-dir="${CR_CHECKS_DIR:-$HOME/.config/control-room/checks}"
-if [ -d "$dir" ]; then
-  repo=$(basename "$(git remote get-url origin 2>/dev/null || printf '%s' "$root")" .git)
-  branch=$(git rev-parse --abbrev-ref HEAD)
-  name=$(printf '%s__%s' "$repo" "$branch" | tr '/' '_')
-  printf '{"repo":"%s","branch":"%s","sha":"%s","at":"%s","ok":%s,"commands":[%s]}\n' \
-    "$(json "$repo")" "$(json "$branch")" "$(git rev-parse HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" "$ran" > "$dir/$name.json.tmp" \
-    && mv "$dir/$name.json.tmp" "$dir/$name.json"
-fi
+record "$ok" false "$ran"
 
 [ "$ok" = true ] && exit 0
 # The agent already retried once on this stop: let it stop, so a failure can't trap it. The record stays red.

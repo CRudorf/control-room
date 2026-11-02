@@ -153,7 +153,8 @@ export type PrimaryAction = {
 };
 
 /** What a repo's Stop hook ran when an agent last tried to finish on a branch. */
-export type StopCheck = { repo: string; branch: string; sha: string; at: string; ok: boolean; commands: { command: string; exit: number }[] };
+/** `running`: the hook started at `at` and hasn't written its result yet. */
+export type StopCheck = { repo: string; branch: string; sha: string; at: string; ok: boolean; running?: boolean; commands: { command: string; exit: number }[] };
 
 export type WorkItem = {
   id: string;

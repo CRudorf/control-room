@@ -1,5 +1,5 @@
 import { trackerIssues } from "./tracker";
-import { checksFor } from "./checks";
+import { checksFor, startChecks } from "./checks";
 import { SETTINGS } from "./settings";
 import { PROJECT } from "./repos";
 // Keeps the board's PR rows fresh and tells subscribers when the board changes.
@@ -402,6 +402,7 @@ export function start() {
   if (POLL) startBranches(() => [...new Set([...snapshot().items.filter((i) => i.keyKind === "sentry").map((i) => i.key), ...jiraKeys(), ...[...jiraIssues().values()].filter((j) => j.testing).map((j) => j.key)])], publish);
   startUsage(publish);
   startArtifacts(publish);
+  startChecks(publish);
   if (!POLL) {
     log("polling off (dev); serving the saved snapshot. Pass --poll to poll.");
     return;

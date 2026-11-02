@@ -23,6 +23,7 @@ import { PickupSheet, useSuggestions } from "./suggestions";
 import { Docs, useDocsCount } from "./docs";
 import type { Suggestion } from "../shared/types";
 import { branchLine } from "../shared/branches";
+import { Running, runningKinds } from "./running";
 
 const LANES: { k: Lane; t: string; hc: string; sc: string }[] = [
   { k: "mine", t: "My turn", hc: "--h-mine", sc: "--s-mine" },
@@ -561,11 +562,13 @@ function Strip({ it, sel, unseen, onClick }: { it: Group["items"][number]; sel: 
   const ids = !it.prs.length ? (it.branches?.length ? branchLine(it.branches) : `no PR yet · ${it.agents[0]?.workspaceLabel ?? ""}`)
     : it._group ? ps.map((p) => `#${p.number}`).join(", ") : ps.slice(0, 2).map(num).join(", ") + (ps.length > 2 ? ` +${ps.length - 2}` : "");
   const cocked = it.lane === "mine" && it.urgency >= 3;
+  const runs = runningKinds(it);
   return (
-    <motion.div layout layoutId={it._group ? undefined : `strip-${it.id}`} data-item={it.id} className={`strip ${sel ? "sel" : ""}`} style={laneVars(it.lane)}
+    <motion.div layout layoutId={it._group ? undefined : `strip-${it.id}`} data-item={it.id} className={`strip ${sel ? "sel" : ""} ${runs.length ? "running" : ""}`} style={laneVars(it.lane)}
       initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0, x: cocked ? 18 : 0 }} exit={{ opacity: 0, scale: 0.97 }}
       transition={spring} onClick={onClick} role="button">
       {unseen && <i className="tick" title="changed since you last looked" />}
+      <Running kinds={runs} />
       <div className="hold" />
       <div className="id"><b>{it.key}</b><span className="prs">{ids}</span>{it._also?.length ? <div className="also">also in {it._also.join(", ")}</div> : null}</div>
       <div className="what"><b>{it.title}</b><span className={it.lane === "mine" ? "need" : ""}>{it.why}</span></div>
@@ -689,7 +692,7 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
           {it.prs.filter((p) => p.taken_over).map((p) => <span key={p.number} className="note">#{p.number} taken over from {p.taken_over!.from}</span>)}
         </div>
         <div><h1>{it.title}</h1><div className="why">{it.lane === "mine" ? <b>{it.why}</b> : it.why}</div>
-          {it.stopChecks?.map((c) => <div key={c.branch} className={`st ${c.ok ? "dim" : ""}`} title={c.commands.map((x) => `${x.command}: exit ${x.exit}`).join("\n")}>Stop checks {c.ok ? "passed" : "failed"} on {c.branch} at {c.sha.slice(0, 8)}: {c.commands.filter((x) => c.ok || x.exit !== 0).map((x) => `${x.command} (exit ${x.exit})`).join(", ")}</div>)}
+          {it.stopChecks?.map((c) => c.running ? <div key={c.branch} className="st"><i className="spin" /> Stop checks running on {c.branch} at {c.sha.slice(0, 8)}, since {new Date(c.at).toLocaleTimeString()}</div> : <div key={c.branch} className={`st ${c.ok ? "dim" : ""}`} title={c.commands.map((x) => `${x.command}: exit ${x.exit}`).join("\n")}>Stop checks {c.ok ? "passed" : "failed"} on {c.branch} at {c.sha.slice(0, 8)}: {c.commands.filter((x) => c.ok || x.exit !== 0).map((x) => `${x.command} (exit ${x.exit})`).join(", ")}</div>)}
           {it.loop && <LoopLines it={it} />}
           {it.guide && <GuideLines it={it} />}
           {it.artifacts && <Artifacts list={it.artifacts} />}

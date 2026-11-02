@@ -1,6 +1,6 @@
 // Stop checks: what a repo's Stop hook ran when an agent last tried to finish on a branch. The hook
 // (scripts/stop-check.sh, copied into the repo) writes the record; the work item shows it.
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, watch } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { StopCheck } from "../shared/types";
@@ -13,14 +13,27 @@ mkdirSync(CHECKS_DIR, { recursive: true });
 const short = (repo: string) => repo.split("/").pop()!;
 export const checkFile = (repo: string, branch: string, dir = CHECKS_DIR) => join(dir, `${short(repo)}__${branch.replace(/\//g, "_")}.json`);
 
-/** The last result on a branch, or null. A half-written or foreign file counts as none. */
-export function readCheck(repo: string, branch: string, dir = CHECKS_DIR): StopCheck | null {
+/** A run older than this never wrote its result: the hook was killed. Its timeout is 5 minutes. */
+export const RUNNING_FOR_MS = 10 * 60_000;
+
+/** The last result on a branch, or the run in progress, or null. A half-written, foreign or abandoned file counts as none. */
+export function readCheck(repo: string, branch: string, dir = CHECKS_DIR, now = Date.now()): StopCheck | null {
   const f = checkFile(repo, branch, dir);
   if (!existsSync(f)) return null;
   try {
     const r = JSON.parse(readFileSync(f, "utf8"));
-    return typeof r.ok === "boolean" && Array.isArray(r.commands) ? { ...r, repo: short(repo) } : null;
+    if (typeof r.ok !== "boolean" || !Array.isArray(r.commands)) return null;
+    if (r.running && !(now - Date.parse(r.at) < RUNNING_FOR_MS)) return null;
+    return { ...r, repo: short(repo), running: r.running === true };
   } catch { return null; }
+}
+
+/** Calls `changed` soon after a hook starts or finishes, so a run shows while it lasts. */
+export function startChecks(changed: () => void) {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  try {
+    watch(CHECKS_DIR, () => { t ??= setTimeout(() => { t = null; changed(); }, 500); });
+  } catch { /* no watching: the next rebuild still reads the files */ }
 }
 
 /** The results on a work item's PR branches, one each. */
@@ -36,7 +49,7 @@ export function checksFor(prs: { repo: string; branch: string }[], dir = CHECKS_
 }
 
 /** One line per result, for the item view. */
-export const checkLine = (c: StopCheck) =>
+export const checkLine = (c: StopCheck) => c.running ? `Stop checks running on ${c.branch} at ${c.sha.slice(0, 8)}, since ${c.at}` :
   `Stop checks on ${c.branch} ${c.ok ? "passed" : "FAILED"} at ${c.sha.slice(0, 8)}: ${c.commands.map((x) => `${x.command} (exit ${x.exit})`).join(", ")}`;
 
 /** Of these repos, the ones checked out here without a Stop check. A repo not checked out is unknown, not a gap. */
