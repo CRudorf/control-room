@@ -1,5 +1,5 @@
 // Layout check: runs a dev server from this checkout, opens the board in headless Chrome at two
-// widths, walks the views (board, a work item, an expanded pane, Sessions, Tidy, Metrics) and fails
+// widths, walks the views (board, a work item, an expanded pane, Sessions, Tidy, Finished, Metrics) and fails
 // when something overlaps, the page scrolls sideways, or a pane is squeezed shut. bin/deploy.sh runs
 // it before installing; `bun scripts/layout-check.ts` runs it alone. Screenshots of failures land in
 // $TMPDIR/control-room-layout.
@@ -130,7 +130,7 @@ async function main() {
           await look(`item ${id}`);
         }
         if (ids.length) { await b.key("z"); await look("expanded pane"); await b.key("Escape"); }
-        for (const [k, view] of [["c", "Sessions"], ["t", "Tidy"], ["i", "Metrics"], ["d", "Docs"]] as const) {
+        for (const [k, view] of [["c", "Sessions"], ["t", "Tidy"], ["v", "Finished"], ["i", "Metrics"], ["d", "Docs"]] as const) {
           await b.key(k);
           await Bun.sleep(1500);
           await look(view);

@@ -4,7 +4,7 @@ import { branchLine } from "../shared/branches";
 import { applyJira, approvedShipped } from "./workitems";
 import { outcomeOf, questionOpen, acceptanceLane } from "./acceptance";
 import { bounces, bounceOf, recordBounces } from "./product";
-import { branchesFor, nameHasKey, repoOf, scanRepo, type BranchStore } from "./branches";
+import { branchesFor, nameHasKey, repoOf, scanRepo, withMerged, type BranchStore, type MergedPr } from "./branches";
 import { db } from "./db";
 import { setAdapter, type Adapter } from "./runner";
 
@@ -169,4 +169,41 @@ test("a branch carries a key of any shape: a tracker's or an error report's", ()
   expect(nameHasKey("fix/ABC-3-CLIENT-N-retry", "ABC-3-CLIENT-N")).toBe(true);
   expect(nameHasKey("abc-12-stage", "ABC-12")).toBe(true);
   expect(nameHasKey("abc-123", "ABC-12")).toBe(false);
+});
+
+describe("merged PRs count as reaching the last stage", () => {
+  const stages = ["staging", "master"];
+  const pr = (over: Partial<MergedPr> = {}): MergedPr => ({ repo: "acme/widgets", number: 7, head: "ABC-1", at: "2026-10-29T00:00:00Z", ...over });
+  const lastIn = (b: ItemBranch) => b.stages[b.stages.length - 1].in;
+
+  test("a merge beats a stale scan, and the board stops asking for the PR", () => {
+    const bs = withMerged([br({})], [pr()], stages);
+    expect(lastIn(bs[0])).toBe(true);
+    expect(bs.some((b) => lastIn(b) === true)).toBe(true);
+  });
+  test("commits after the merge mean the branch has new work", () =>
+    expect(lastIn(withMerged([br({ lastCommitAt: "2026-10-30T00:00:00Z" })], [pr()], stages)[0])).toBe(false));
+  test("another repo's PR with the same branch name does not count", () =>
+    expect(lastIn(withMerged([br({})], [pr({ repo: "acme/other", head: "ABC-2" })], stages)[0])).toBe(false));
+  test("a deleted branch still counts through its merged PR", () => {
+    const [b] = withMerged([], [pr()], stages);
+    expect(b.name).toBe("ABC-1");
+    expect(lastIn(b)).toBe(true);
+    expect(branchLine([b])).toBe("ABC-1 · on master");
+  });
+  test("an old merge of a deleted branch does not finish newer live work", () => {
+    const bs = withMerged([br({ name: "ABC-1-again", lastCommitAt: "2026-10-30T00:00:00Z" })], [pr()], stages);
+    expect(bs.map((b) => b.name)).toEqual(["ABC-1-again"]);
+  });
+  test("a project with no stages is unchanged", () => expect(withMerged([br({})], [pr()], [])).toEqual([br({})]));
+});
+
+describe("stale branch reads", () => {
+  const now = Date.parse("2026-10-30T12:00:00Z");
+  test("an old read says so", () =>
+    expect(branchLine([{ ...br({}), readAt: "2026-10-30T09:00:00Z" }], now)).toBe("ABC-1 · on staging, not on master · read 3h ago"));
+  test("a recent read does not", () =>
+    expect(branchLine([{ ...br({}), readAt: "2026-10-30T11:30:00Z" }], now)).toBe("ABC-1 · on staging, not on master"));
+  test("a branch on the last stage does not", () =>
+    expect(branchLine([{ ...br({ onMaster: true }), readAt: "2026-10-20T00:00:00Z" }], now)).toBe("ABC-1 · on master"));
 });

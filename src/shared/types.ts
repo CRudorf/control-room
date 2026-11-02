@@ -255,7 +255,7 @@ export type AcceptanceFacts = {
 
 /** A remote branch named with a work item's key, and whether it is in each stage of the project's flow. Null: the repo has no such branch. */
 export type BranchStage = { name: string; in: boolean | null };
-export type ItemBranch = { repo: string; name: string; stages: BranchStage[]; lastCommitAt: string };
+export type ItemBranch = { repo: string; name: string; stages: BranchStage[]; lastCommitAt: string; readAt?: string };
 
 /** A status change the board suggests for a work item's Jira issue. */
 export type Suggested = { key: string; from: string; to: string; id: string; why: string };
@@ -286,7 +286,7 @@ export type Dependency = { ref: string; on: string | null; step: string; setAt: 
 export type Move = { id: string; key: string; kind: WorkItem["keyKind"] } | null;
 
 /** A work item whose PRs all merged or closed today, with no agent left on it. */
-export type FinishedItem = { key: string; title: string; repos: string[]; at: string; suggest?: Suggested | null; prs: { ref: string; url: string; title: string; state: "merged" | "closed" }[] };
+export type FinishedItem = { key: string; title: string; repos: string[]; at: string; why?: string; url?: string; startedAt?: string; suggest?: Suggested | null; prs: { ref: string; url: string; title: string; state: "merged" | "closed" }[] };
 
 /** A reviewer sitting on the user's PRs past the stale threshold, and the Slack DM that nudges them. */
 export type Nudge = {

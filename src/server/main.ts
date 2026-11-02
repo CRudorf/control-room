@@ -2,7 +2,7 @@ import index from "../ui/index.html";
 import { note as recordNote } from "./runner";
 import { join } from "node:path";
 import { DEV, PORT, ROOT } from "./config";
-import { adopt, copyAsk, moveJira, nudge, publish, setEffort, refetch, refresh, remove, removed, restore, setDependency, setHold, setMove, setPark, snapshot, start, subscribe } from "./feed";
+import { finishedSince, adopt, copyAsk, moveJira, nudge, publish, setEffort, refetch, refresh, remove, removed, restore, setDependency, setHold, setMove, setPark, snapshot, start, subscribe } from "./feed";
 import { startFeedbackTask } from "./feedbacktask";
 import type { Move } from "../shared/types";
 import { markAddressed, postReplies, rerequest, rerunCi, resolveThreads, updateBranch, type Reply } from "./actions";
@@ -397,6 +397,10 @@ const server = Bun.serve({
         catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
       }),
     },
+    "/api/finished": api((req) => {
+      const days = Math.min(365, Math.max(1, Number(new URL(req.url).searchParams.get("days")) || 30));
+      return Response.json({ items: finishedSince(new Date(Date.now() - days * 86_400_000).toISOString()), days });
+    }),
     "/api/done": api(async () => {
       try { return Response.json(await accomplished()); }
       catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }

@@ -18,7 +18,7 @@
 
 **Guardrail**: What stops an agent whatever auto mode's classifier decides: a deny rule, the sandbox failing closed, branch protection. The control room only reports missing ones, in Tidy.
 
-**Finished**: A work item with no work left: its PRs are all merged or closed, and no agent is running. It leaves the board, whatever status its issue shows.
+**Finished**: A work item with no work left: its PRs are all merged or closed, and no agent is running. It leaves the board, whatever status its issue shows. A park rule can also finish an issue. The Finished page lists finished work day by day.
 
 **Review request**: Someone else's PR awaiting the user's review, in **Asked of me**. Always keyed by the PR itself, never merged into the user's own work item, even when they share an issue.
 
@@ -39,6 +39,8 @@
 **Issue**: A tracked unit of work in whichever system the project uses, with its own id.
 
 **Parked**: A work item or review request the user has set aside on purpose, with a note saying why and optionally an until-date. Sits in a collapsed Parked section under the lanes and never notifies. Wakes on its own when a person does something new on it (feedback, a review re-request, a mention), when one of its agents waits for input (its question is the why, in My turn), or the date passes; bot comments, CI and pushes don't wake it.
+
+**Park rule**: A project setting that parks an issue when it reaches a status, and names what takes it off Parked: a finish condition, a number of days, or a move to another status. The user can also unpark it by hand. An open PR or a running agent keeps the item in its lane.
 
 **Waiting on author**: A review request the user has handed back to its author until they act, with an optional note. It sits in Waiting on others and wakes back into Asked of me, with a notification, when the author or anyone but the user pushes, comments, replies or mentions the user.
 

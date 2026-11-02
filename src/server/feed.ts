@@ -17,7 +17,7 @@ import { pendingDrafts, readDrafts } from "./review";
 import { announce } from "./notifier";
 import { runs } from "./runs";
 import { pickedNow } from "./suggestions";
-import { applyGates, applyJira, applyPicked, approvedShipped, applyParks, applyRuns, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
+import { slug, applyGates, applyJira, applyPicked, approvedShipped, applyParks, applyRuns, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
 import { jiraError, jiraIssues, startJira, transition } from "./jira";
 import { noteSessions, startUsage, usageFor } from "./usage";
 import { machine, type Machine } from "./health";
@@ -33,7 +33,8 @@ import { findStacks, withStack } from "./stacks";
 import { branchesFor, startBranches } from "./branches";
 import { prFacts } from "./history";
 import { recordBounces } from "./product";
-import type { FinishedItem } from "../shared/types";
+import type { FinishedItem, Issue, ItemBranch } from "../shared/types";
+import { parkState, type RulePark } from "./parkrules";
 
 type Saved = { user: string; rows: PrRow[]; fps: Fingerprints; polledAt: string | null; reconciledAt: string | null };
 
@@ -75,9 +76,65 @@ const parks = () => new Map(db.query<ParkRow, []>("SELECT * FROM parked").all()
 
 const detail = (item: string | null) => ({ item, trigger: "detail" });
 
+// Park rules: which issues a rule parked, and which the user took off Parked by hand.
+const PARK_RULES = SETTINGS.flow?.parkRules ?? [];
+let ruleParks = load<Record<string, RulePark>>("rule_parks") ?? {};
+let released = new Set(load<string[]>("rule_released") ?? []);
+const parkOf = (j: Issue, bs: ItemBranch[]) => parkState(j, bs, PARK_RULES, ruleParks[j.key], released.has(slug(j.key)));
+
+/** Remembers what the rules parked, and records each issue a rule finished, once. */
+function settleRuleParks(issues: Map<string, Issue>, onBoard: Set<string>) {
+  if (!PARK_RULES.length) return;
+  const next: Record<string, RulePark> = {};
+  const stillReleased = new Set<string>();
+  for (const j of issues.values()) {
+    if (!j.mine) continue;
+    const bs = branchesFor(j.key), s = parkOf(j, bs);
+    if (PARK_RULES.some((r) => r.status.toLowerCase() === j.status.toLowerCase()) && released.has(slug(j.key))) stillReleased.add(slug(j.key));
+    if (s.state === "parked" || s.state === "woke") next[j.key] = { status: s.rule.status, at: s.since };
+    else if (s.state === "finished" && onBoard.has(j.key)) { if (ruleParks[j.key]) next[j.key] = ruleParks[j.key]; }
+    else if (s.state === "finished")
+      db.query("INSERT OR IGNORE INTO finished_items (key, at, title, url, status, why, repos) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .run(j.key, new Date().toISOString(), j.summary, j.url, j.status, s.why, JSON.stringify([...new Set(bs.map((b) => b.repo.split("/").pop()!))]));
+  }
+  if (JSON.stringify(next) !== JSON.stringify(ruleParks)) save("rule_parks", (ruleParks = next));
+  if (stillReleased.size !== released.size) { released = stillReleased; save("rule_released", [...released]); }
+}
+
+type FinishedItemRow = { key: string; at: string; title: string; url: string; status: string; why: string; repos: string };
+const ruleFinishedSince = (since: string): FinishedItem[] =>
+  db.query<FinishedItemRow, [string]>("SELECT * FROM finished_items WHERE at >= ? ORDER BY at DESC").all(since)
+    .map((r) => ({ key: r.key, title: r.title, repos: JSON.parse(r.repos), at: r.at, prs: [], why: r.why, url: r.url }));
+
+/** The Finished page: every work item that finished since `since`, newest first. */
+export function finishedSince(since: string): FinishedItem[] {
+  const facts = prFacts().filter((f) => (f.merged ?? f.closed ?? "") >= since);
+  const rows = [
+    ...facts.map((f) => ({ ref: f.ref, at: (f.merged ?? f.closed)!, state: (f.merged ? "merged" : "closed") as "merged" | "closed", title: f.title, url: f.url, repo: f.repo, branch: f.branch ?? "" })),
+    ...db.query<FinishedRow, [string]>("SELECT * FROM finished WHERE at >= ?").all(since),
+  ].filter((r, i, all) => all.findIndex((x) => x.ref === r.ref) === i);
+  const by = new Map(finishedToday(rows, snapshot().items, featureOf, since).map((f) => [f.key, f]));
+  const started = new Map<string, string>();
+  for (const f of prFacts()) if (!started.has(f.feature) || f.created < started.get(f.feature)!) started.set(f.feature, f.created);
+  const issues = new Map([...jiraIssues(), ...trackerIssues()]);
+  for (const r of ruleFinishedSince(since)) {
+    const had = by.get(r.key);
+    by.set(r.key, had ? { ...had, why: r.why, url: r.url, at: r.at > had.at ? r.at : had.at } : r);
+  }
+  for (const [k, at] of approvedSeen) if (at >= since && !by.has(k)) {
+    const j = issues.get(k);
+    by.set(k, { key: k, title: j?.summary ?? k, repos: [], at, prs: [], why: "approved and shipped", url: j?.url });
+  }
+  return [...by.values()].map((f) => ({ ...f, url: f.url ?? issues.get(f.key)?.url, startedAt: started.get(f.key) })).sort((a, b) => b.at.localeCompare(a.at));
+}
+
 /** Parks a work item (note, optional until), or unparks it with note null. */
 export function setPark(item: string, note: string | null, until: string | null) {
-  if (note === null) db.query("DELETE FROM parked WHERE item = ?").run(item);
+  if (note === null) {
+    db.query("DELETE FROM parked WHERE item = ?").run(item);
+    // An issue a rule parked stays off Parked until its status changes.
+    if (Object.keys(ruleParks).some((k) => slug(k) === item)) { released.add(item); save("rule_released", [...released]); }
+  }
   else db.query("INSERT OR REPLACE INTO parked (item, set_at, until, note) VALUES (?, ?, ?, ?)").run(item, new Date().toISOString(), until, note);
   record(detail(item), note === null ? "unpark" : "park", item, note === null ? "unparked" : `${note}${until ? ` until ${until}` : ""}`);
   publish();
@@ -237,17 +294,19 @@ export function snapshot(): Snapshot {
   const grouped = groupWorkItems(all.map(withBehind).map(withStack(all)), h.agents, holds(), reranHeads(), drafts, moves(), new Set([...shutGates(gs, done), ...running(loopsNow())]));
   const issues = new Map([...jiraIssues(), ...trackerIssues()]);
   const ef = efforts();
-  const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs }), pickedNow(), issues), gs, done), runs());
+  const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs, parkOf }), pickedNow(), issues), gs, done), runs());
   const mine = myLastActions();
   const items = sortItems(rankNext(applyGuides(applyParks(applyLoop(blocked, views(blocked, loopsNow())), parks()))))
     .map((it) => {
       const u = usageFor(it), a = artifactsFor(it), e = ef.get(it.key), c = checksFor(it.prs);
       return { ...withTasks(it), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
     });
+  settleRuleParks(issues, new Set(items.map((it) => it.key)));
   const today = db.query<FinishedRow, [string]>("SELECT * FROM finished WHERE at >= ? ORDER BY at").all(midnight());
   const finished = finishedToday(today, items, featureOf, midnight())
     .map((f) => (issues.has(f.key) ? { ...f, suggest: suggestFinished(issues.get(f.key)!, f) } : f));
   for (const f of approvedFinished(issues, midnight())) if (!finished.some((x) => x.key === f.key)) finished.push(f);
+  for (const f of ruleFinishedSince(midnight())) if (!finished.some((x) => x.key === f.key)) finished.push(f);
   return {
     user, items, nudges: staleNudges(items, nudged), finished, jiraError: jiraError(), machine: lastMachine, polledAt, reconciledAt, error,
     herdr: { up: h.up, error: h.error }, dev: DEV, build: BUILD, project: PROJECT, flow: { stages: SETTINGS.flow?.stages, copySuffix: SETTINGS.flow?.copySuffix },
@@ -386,7 +445,8 @@ export const refresh = () => step("full");
 /** Every Jira key the board shows, for the Jira feed. */
 const jiraKeys = () => {
   const s = snapshot();
-  return [...s.items.filter((i) => i.keyKind === "jira").map((i) => i.key), ...s.finished.map((f) => f.key).filter((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k))];
+  // An issue a rule parked stays in the query after it moves to a done status, so that move can finish it.
+  return [...Object.keys(ruleParks), ...s.items.filter((i) => i.keyKind === "jira").map((i) => i.key), ...s.finished.map((f) => f.key).filter((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k))];
 };
 
 /** Moves a work item's Jira issue as the board suggested. */

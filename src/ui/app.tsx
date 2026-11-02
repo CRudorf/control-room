@@ -18,6 +18,7 @@ import { History, Tidy } from "./tidy";
 import { Sessions } from "./sessions";
 import { LiveConsole } from "./console";
 import { Metrics, tok } from "./metrics";
+import { Finished } from "./finished";
 import { handledKey, NextQueue, nudgeId, nudgeKey } from "./next";
 import { PickupSheet, useSuggestions } from "./suggestions";
 import { Docs, useDocsCount } from "./docs";
@@ -59,11 +60,12 @@ type Theme = "system" | "light" | "dark";
 type SheetKind = "park" | "remove" | "dependency" | "move" | "ask" | "effort";
 type Group = { key: string; title: string; lane?: Lane; collapsed?: boolean; items: (WorkItem & { _group?: string; _also?: string[] })[] };
 
-type Page = "work" | "sessions" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup";
+type Page = "work" | "sessions" | "finished" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup";
 /** The pages in the nav strip. */
 const NAV: { p: Page; label: string; k: string; title: string }[] = [
   { p: "work", label: "Work", k: "esc", title: "Your work items" },
   { p: "sessions", label: "Sessions", k: "c", title: "Every Claude session in herdr, work item or not" },
+  { p: "finished", label: "Finished", k: "v", title: "Work that finished, day by day" },
   { p: "metrics", label: "Metrics", k: "i", title: "Output and friction, week by week" },
   { p: "docs", label: "Docs", k: "d", title: "Glossary, ADRs, statecharts and visuals" },
 ];
@@ -74,7 +76,7 @@ const MORE: { p: Page; label: string; k: string; title: string }[] = [
   { p: "history", label: "History", k: "h", title: "Everything the control room did" },
   { p: "removed", label: "Removed", k: "e", title: "The editable remove list" },
 ];
-const PAGE_KEYS: Record<string, Page> = { c: "sessions", i: "metrics", d: "docs", t: "tidy", h: "history", e: "removed", u: "cleanup" };
+const PAGE_KEYS: Record<string, Page> = { v: "finished", c: "sessions", i: "metrics", d: "docs", t: "tidy", h: "history", e: "removed", u: "cleanup" };
 
 export function App() {
   const { snap, status, refresh } = useFeed();
@@ -305,6 +307,7 @@ export function App() {
       else if (k === "u") open("cleanup");
       else if (k === "h") open("history");
       else if (k === "i") open("metrics");
+      else if (k === "v") open("finished");
       else if (k === "c") open("sessions");
       else if (k === "d") open("docs");
       else if (k === "Escape" && wide) setWide(null);
@@ -379,6 +382,8 @@ export function App() {
           <History onClose={back} />
         ) : rem ? (
           <Removed onClose={back} />
+        ) : page === "finished" ? (
+          <Finished onClose={back} />
         ) : met ? (
           <Metrics onClose={back} />
         ) : ses ? (
@@ -489,7 +494,7 @@ const KEYS: [string, string][] = [
   ["p", "park the selected item (again to unpark)"], ["x", "remove the selected item's PRs"], ["b", "dependency a PR on another PR or a step"], ["l", "move a PR into another item, or out"], ["o", "take over someone else's PR (review requests)"], ["e", "Removed: the remove list"],
   ["/", "filter by text"], ["g", "group by lane, repo or effort"], ["y", "put the selected item in an effort"], ["f", "focus mode"], ["z", "expand a pane to the whole work area (again, or esc, for the default view)"],
   ["a", "start an agent on the selected item"], ["m", "mark the selected item's feedback addressed"], ["w", "wait on the author (review requests)"], ["⌘⏎", "start it, from the agent sheet"],
-  ["t", "Tidy herdr tabs"], ["h", "History"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], ["r", "refresh from GitHub now"],
+  ["t", "Tidy herdr tabs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], ["r", "refresh from GitHub now"],
   ["?", "this list"], ["esc", "back / clear filters"],
 ];
 

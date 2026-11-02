@@ -16,11 +16,20 @@ export function branchWhere(b: ItemBranch): string {
 
 const rank = (b: ItemBranch) => (b.stages ?? []).filter((x) => x.in === true).length;
 
+const STALE_MS = 3_600_000;
+/** " · read 3h ago" when the scan behind a branch that hasn't finished is over an hour old. Scans run every 20 minutes. */
+function staleNote(b: ItemBranch, now: number): string {
+  const age = b.readAt ? now - Date.parse(b.readAt) : 0;
+  if (inLastStage(b) || !(age > STALE_MS)) return "";
+  const hours = Math.floor(age / STALE_MS);
+  return ` · read ${hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`} ago`;
+}
+
 /** "ABC-12 · on test, not on prod": the branch that got furthest, then the newest, "+N" for the rest. Empty when there are none. */
-export function branchLine(bs: ItemBranch[] | undefined): string {
+export function branchLine(bs: ItemBranch[] | undefined, now = Date.now()): string {
   if (!bs?.length) return "";
   const [b, ...rest] = [...bs].sort((x, y) => rank(y) - rank(x) || y.lastCommitAt.localeCompare(x.lastCommitAt));
-  return `${b.name} · ${branchWhere(b)}${rest.length ? ` +${rest.length}` : ""}`;
+  return `${b.name} · ${branchWhere(b)}${rest.length ? ` +${rest.length}` : ""}${staleNote(b, now)}`;
 }
 
 /**

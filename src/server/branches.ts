@@ -1,7 +1,8 @@
 // Branches: a work item's remote branches, named with its Jira key (GLOSSARY: Branch), in every full
 // clone under ~/Projects whose origin is in the settings org. Every BRANCH_EVERY_MS (polling only) it
 // fetches each repo once, in turn, and records which matching branches are in each stage of the
-// project's flow. All commands go through the runner. A failure keeps the last cache.
+// project's flow. All commands go through the runner. A failure keeps the last cache. GitHub's merged
+// PRs count as well, so a merge shows within minutes and a failed fetch can't hide it.
 import { projectRepos, repoPath } from "./repos";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -12,12 +13,20 @@ import { read } from "./runner";
 import { SETTINGS } from "./settings";
 
 export const BRANCH_EVERY_MS = 20 * 60_000;
+/** How often GitHub is asked for PRs merged into the last stage. One call per repo. */
+export const MERGED_EVERY_MS = 2 * 60_000;
+/** A fetch of a large repo takes minutes. Every other git command stays on the short limit. */
+const FETCH_TIMEOUT_MS = 5 * 60_000;
+const MERGED_KEPT = 300;
 const STAGES = SETTINGS.flow?.stages ?? [];
 const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 
 /** The cache: per repo (owner/name), the branches that matched a key, and when it was read. */
 export type BranchStore = Record<string, { at: string; branches: (ItemBranch & { sha: string })[] }>;
 let store: BranchStore = load<BranchStore>("branches") ?? {};
+/** A PR merged into the last stage, as GitHub reports it. */
+export type MergedPr = { repo: string; number: number; head: string; at: string };
+let merged: MergedPr[] = load<MergedPr[]>("branches_merged") ?? [];
 const failedOnce = new Set<string>();
 
 /** Whether a branch name carries a key: case-insensitive, not inside a longer word or number. */
@@ -37,7 +46,7 @@ const ancestor = (dir: string, branch: string, base: string) =>
 
 /** One repo: fetch, then the remote branches that carry any key, with the stages of the flow that each one has reached. */
 export async function scanRepo(dir: string, keys: string[]): Promise<(ItemBranch & { sha: string })[]> {
-  await git(dir, "fetch", "--prune", "-q", "origin");
+  await read(["git", "-C", dir, "fetch", "--prune", "-q", "origin"], { timeoutMs: FETCH_TIMEOUT_MS });
   const refs = (await git(dir, "for-each-ref", "--format=%(refname:short)|%(objectname)|%(committerdate:iso-strict)", "refs/remotes/origin"))
     .split("\n").filter(Boolean).map((l) => l.split("|")).map(([ref, sha, at]) => ({ name: ref.replace(/^origin\//, ""), sha, at }));
   const have = new Set(refs.map((r) => r.name));
@@ -87,10 +96,54 @@ export function syncBranches(keys: string[], changed: () => void): Promise<void>
   return running;
 }
 
-/** A work item's branches across repos, from the cache. */
-export function branchesFor(key: string, s: BranchStore = store): ItemBranch[] {
-  return Object.values(s).flatMap((r) => r.branches.filter((b) => nameHasKey(b.name, key)))
-    .map(({ repo, name, stages, lastCommitAt }) => ({ repo, name, stages, lastCommitAt }));
+/**
+ * Adds what GitHub knows to the branches a scan read, so a merge counts at once, even if the fetch failed.
+ * A merged PR puts its branch in the last stage, unless the branch has commits newer than the merge.
+ * The merged PR of a deleted branch counts as a branch, unless a live branch has newer commits.
+ */
+export function withMerged(bs: ItemBranch[], prs: MergedPr[], stages: string[] = STAGES): ItemBranch[] {
+  if (!stages.length) return bs;
+  const last = stages[stages.length - 1];
+  const time = (s: string) => Date.parse(s) || 0;
+  const out = bs.map((b) => {
+    const hit = prs.some((p) => p.repo === b.repo && p.head === b.name && time(p.at) >= time(b.lastCommitAt));
+    return hit ? { ...b, stages: b.stages.map((x) => (x.name === last ? { ...x, in: true } : x)) } : b;
+  });
+  const newest = Math.max(0, ...bs.map((b) => time(b.lastCommitAt)));
+  for (const p of prs) {
+    if (time(p.at) < newest || out.some((b) => b.repo === p.repo && b.name === p.head)) continue;
+    out.push({ repo: p.repo, name: p.head, lastCommitAt: p.at, stages: stages.map((name) => ({ name, in: name === last ? true : null })) });
+  }
+  return out;
+}
+
+/** A work item's branches across repos: the cache, then GitHub's merged PRs. */
+export function branchesFor(key: string, s: BranchStore = store, m: MergedPr[] = merged): ItemBranch[] {
+  const scanned = Object.values(s).flatMap((r) => r.branches.filter((b) => nameHasKey(b.name, key))
+    .map(({ repo, name, stages, lastCommitAt }) => ({ repo, name, stages, lastCommitAt, readAt: r.at })));
+  return withMerged(scanned, m.filter((p) => nameHasKey(p.head, key)));
+}
+
+/** Asks GitHub for the latest PRs merged into the last stage, one call per repo. A failure keeps the last read. */
+export async function syncMerged(changed: () => void): Promise<void> {
+  const last = STAGES[STAGES.length - 1];
+  if (!last) return;
+  const seen = new Map(merged.map((p) => [`${p.repo}#${p.number}`, p]));
+  const before = seen.size;
+  for (const c of await clones()) {
+    try {
+      const raw = await read(["gh", "pr", "list", "-R", c.repo, "--base", last, "--state", "merged", "--limit", "50", "--json", "number,headRefName,mergedAt"]);
+      for (const p of JSON.parse(raw) as { number: number; headRefName: string; mergedAt: string }[])
+        seen.set(`${c.repo}#${p.number}`, { repo: c.repo, number: p.number, head: p.headRefName, at: p.mergedAt });
+    } catch (e) {
+      if (!failedOnce.has(`merged ${c.repo}`)) log(`branches: merged PRs of ${c.repo} failed, keeping the last read:`, (e as Error).message);
+      failedOnce.add(`merged ${c.repo}`);
+    }
+  }
+  if (seen.size === before) return;
+  merged = [...seen.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, MERGED_KEPT);
+  save("branches_merged", merged);
+  changed();
 }
 
 /** Tests only: replace the cache. */
@@ -99,4 +152,6 @@ export const setBranchStore = (s: BranchStore) => { store = s; };
 export function startBranches(keys: () => string[], changed: () => void) {
   void syncBranches(keys(), changed);
   setInterval(() => void syncBranches(keys(), changed), BRANCH_EVERY_MS);
+  void syncMerged(changed);
+  setInterval(() => void syncMerged(changed), MERGED_EVERY_MS);
 }

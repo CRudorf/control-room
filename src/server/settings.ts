@@ -9,8 +9,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { PROJECT } from "./repos";
 
+import type { ParkRule } from "./parkrules";
+
 /** A project's delivery flow: the branches work moves through, last one means shipped, and the issue statuses of a person's acceptance step. */
-export type Flow = { stages?: string[]; testingStatus?: string; approvedStatus?: string; who?: string; copySuffix?: string };
+export type Flow = { stages?: string[]; testingStatus?: string; approvedStatus?: string; who?: string; copySuffix?: string; parkRules?: ParkRule[] };
 
 export type Settings = { flow?: Flow; aws?: boolean; awsMfaScript?: string; pickupHint?: string; org?: string; sentryOrg?: string; jiraProjects?: string[]; jiraSuggestSprints?: string[]; jiraSuggestLabel?: string; tracker?: { kind: "github"; repos: string[] } };
 

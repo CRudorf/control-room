@@ -694,3 +694,19 @@ button.mtile.drillable:hover { border-color:var(--rule); }
 .ftask .verdict { display:inline-block; height:auto; padding:2px 7px; border:0; border-radius:3px; font:700 11px 'Archivo Narrow'; letter-spacing:.03em; color:#fff; background:var(--ink-3); }
 .ftask .verdict.pen { background:var(--pencil); } .ftask .verdict.ok { background:var(--ok); color:#10220f; }
 .ftask .evidence { flex:1; min-width:200px; color:var(--ink); }
+
+/* The Finished page */
+.finpage .finsearch { width:180px; margin:0 8px 0 0; }
+.finday { display:flex; flex-direction:column; gap:6px; }
+.finday h4 { margin:8px 0 2px; font:800 13px Archivo; color:var(--ink); }
+.finday h4 .c { color:var(--ink-3); font-weight:600; }
+.fincard { display:flex; flex-direction:column; gap:3px; padding:8px 10px; border:1px solid var(--rule); border-left:3px solid var(--ok); border-radius:4px; min-width:0; }
+.finhead { display:flex; gap:10px; align-items:baseline; min-width:0; }
+.finhead .fkey { font:800 13px Archivo; color:var(--ink); white-space:nowrap; text-decoration:none; }
+.finhead a.fkey:hover { text-decoration:underline; }
+.finhead .ft { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; color:var(--ink-2); }
+.finmeta { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; color:var(--ink-3); }
+.finmeta .how { color:var(--ok); font-weight:600; }
+.finmeta a { color:var(--ink-3); text-decoration:none; }
+.finmeta a.merged { color:var(--ok); }
+.finmeta a:hover { text-decoration:underline; }

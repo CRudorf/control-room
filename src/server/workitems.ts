@@ -3,6 +3,7 @@ import type { Agent, Cell, FinishedItem, Dependency, Hold, ItemBranch, Issue, La
 import { prRef } from "../shared/types";
 import { SETTINGS, KNOWN_PROJECTS } from "./settings";
 import { branchLine } from "../shared/branches";
+import type { ParkState } from "./parkrules";
 import { reachedLast, outcomeOf, acceptanceLane } from "./acceptance";
 
 // Branch names are lowercase and full of words-with-numbers, so a branch only
@@ -232,7 +233,7 @@ function itemFrom(id: string, key: string, keyKind: WorkItem["keyKind"], prs: Pr
   };
 }
 
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 // Branch prefixes that say what kind of change it is, not which piece of work.
 const BRANCH_TYPES = new Set(["fix", "feat", "feature", "chore", "ci", "refactor", "docs", "test", "hotfix", "bug", "build", "perf", "release", "dependabot", "renovate", "beekeeper"]);
@@ -448,7 +449,7 @@ export function suggestFinished(j: Issue, f: FinishedItem): Suggested | null {
   return suggestion(j, to(j, /merged/i) ?? to(j, /^done$/i), "every PR merged");
 }
 
-export type JiraCtx = { branchesFor?: (key: string) => ItemBranch[]; mergedPrs?: (key: string) => string[] };
+export type JiraCtx = { branchesFor?: (key: string) => ItemBranch[]; mergedPrs?: (key: string) => string[]; parkOf?: (issue: Issue, branches: ItemBranch[]) => ParkState };
 
 /**
  * Puts Jira on the board: each Jira work item gets its issue's status, its branches and a suggested
@@ -483,6 +484,15 @@ export function applyJira(items: WorkItem[], issues: Map<string, Issue>, ctx: Ji
       ...(bs.length ? { branches: bs } : {}),
     };
     const t = acceptanceLane(j, bs, mergedOf(j.key));
+    // A park rule outranks the lane. Its issue keeps its action, so the next step is one click away.
+    const rule = ctx.parkOf?.(j, bs) ?? { state: "none" as const };
+    if (rule.state === "finished") continue;
+    if (rule.state === "parked" || rule.state === "woke") {
+      const primary = t?.primary ?? { label: `Open ${j.key}`, url: j.url };
+      if (rule.state === "woke") out.push({ ...base, lane: "mine", why: rule.why, urgency: 1, primary });
+      else out.push({ ...base, lane: "parked", why: `“${rule.note}”`, urgency: 0, primary, park: { item: base.id, setAt: rule.since, until: null, note: rule.note, woke: null } });
+      continue;
+    }
     if (t) {
       if (t.finished) continue;
       out.push({ ...base, lane: t.lane, why: t.why, urgency: t.urgency, primary: t.primary,
