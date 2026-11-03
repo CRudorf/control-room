@@ -62,7 +62,7 @@ PR_FIELDS = """
   author { login }
   reviewRequests(first: 20) { nodes { requestedReviewer {
     __typename ... on User { login } ... on Team { slug } } } }
-  reviews(last: 50) { nodes { author { __typename login } state submittedAt body url } }
+  reviews(last: 50) { nodes { author { __typename login } state submittedAt body url comments { totalCount } } }
   comments(last: 50) { nodes { author { __typename login } createdAt body url } }
   reviewThreads(first: 100) { nodes {
     id isResolved isOutdated path line
@@ -137,6 +137,8 @@ def age(s):
 
 # Review bots that post as ordinary User accounts, so __typename can't catch them.
 BOT_LOGIN = re.compile(r"bot|^wiz-", re.I)
+# A bot's review body that reports nothing to fix.
+NOTHING_TO_ACT = re.compile(r"no actionable comments|actionable comments posted: 0|no issues found|lgtm", re.I)
 
 
 def is_bot(author):
@@ -266,6 +268,18 @@ def open_feedback(pr, user):
                 and login(r["author"]) != user and ts(r["submittedAt"]) > my_last):
             items.append({"kind": "review", "who": login(r["author"]), "bot": False,
                           "url": r["url"], "at": r["submittedAt"], "body": r["body"]})
+
+    # A review bot that puts its findings in the review body, with no inline comments: its
+    # latest such review, after your last push, unless it says there's nothing to act on.
+    bot_bodies = {}
+    for r in pr["reviews"]["nodes"]:
+        if (r["state"] == "COMMENTED" and is_bot(r["author"]) and r["body"].strip()
+                and not (r.get("comments") or {}).get("totalCount") and not NOTHING_TO_ACT.search(r["body"])
+                and ts(r["submittedAt"]) > my_last):
+            bot_bodies[login(r["author"])] = r
+    for who, r in bot_bodies.items():
+        items.append({"kind": "review", "who": who, "bot": True,
+                      "url": r["url"], "at": r["submittedAt"], "body": r["body"]})
 
     for c in pr["comments"]["nodes"]:
         if not is_bot(c["author"]) and login(c["author"]) != user and ts(c["createdAt"]) > my_last:

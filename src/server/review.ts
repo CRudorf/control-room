@@ -15,6 +15,28 @@ mkdirSync(DIR, { recursive: true });
 const file = (ref: string) => join(DIR, ref.replace(/[/#]/g, "__") + ".json");
 export const draftsFile = file;
 
+// Self-review findings the user dismissed, with why. Kept apart from the drafts so a re-review, which
+// rewrites the drafts, keeps them and is told not to raise them again.
+const DISMISSED = join(DIR, "dismissed");
+mkdirSync(DISMISSED, { recursive: true });
+type Dismissal = { path: string; title: string; reason: string; at: string; sha: string };
+const dismissedFile = (ref: string) => join(DISMISSED, ref.replace(/[/#]/g, "__") + ".json");
+const sameFinding = (a: { path: string; title: string }, b: { path: string; title: string }) => a.path === b.path && a.title === b.title;
+export function dismissals(ref: string): Dismissal[] {
+  try { return JSON.parse(readFileSync(dismissedFile(ref), "utf8")); } catch { return []; }
+}
+/** Dismisses one drafted finding with a reason, or with a null reason, brings it back. */
+export function dismissFinding(ref: string, id: number, reason: string | null) {
+  const d = readDrafts(ref);
+  const f = d?.findings.find((x) => x.id === id);
+  if (!d || !f) throw new Error("no such finding");
+  const rest = dismissals(ref).filter((x) => !sameFinding(x, f));
+  const next = reason?.trim() ? [...rest, { path: f.path, title: f.title, reason: reason.trim(), at: new Date().toISOString(), sha: d.sha }] : rest;
+  writeFileSync(dismissedFile(ref), JSON.stringify(next, null, 2));
+}
+/** The findings still open: not dismissed. */
+export const openFindings = (d: ReviewDrafts) => d.findings.filter((f) => !f.dismissed);
+
 // Field guides (guides.ts) are written by the same review, beside the drafts.
 const GUIDES = join(INSTALLED_STATE_DIR, "guides");
 mkdirSync(GUIDES, { recursive: true });
@@ -49,7 +71,7 @@ export function reviewPrompt(p: PrRow, personas: number, own = false): string {
   const ref = `${p.repo}#${p.number}`;
   return `Run a ${personas} person multi-persona review on ${own ? "my own " : ""}PR ${ref} ("${p.title}")${own ? ", before my reviewers see it: be the reviewers I'm about to get, including the review bots (CodeRabbit and the like), and find what they would" : ""}. Check it out in your worktree first: \`gh pr checkout ${p.number} -R ${p.repo}\`. Any finding gets verified locally and empirically by running actual code; note the input and output that confirm it. Drop findings you can't confirm. ${TESTS_RULE}
 
-${own && lessonsFor(p.repo).length ? `My merged PRs in this repo have broken things before. Check this one can't do the same, and make each that applies a finding:\n${lessonsFor(p.repo).map((l) => `- ${l.text} (${l.ref.split("/").pop()}${l.files?.length ? `, in ${l.files.join(", ")}` : ""})`).join("\n")}\n\n` : ""}${own ? "Then draft the findings for me to fix, each body saying what's wrong and the fix. Make no code changes, push nothing and post nothing to the PR." : "Then draft the findings to pass on as a code reviewer, as inline comments on the PR. Make no code changes and post nothing to the PR."}
+${own && lessonsFor(p.repo).length ? `My merged PRs in this repo have broken things before. Check this one can't do the same, and make each that applies a finding:\n${lessonsFor(p.repo).map((l) => `- ${l.text} (${l.ref.split("/").pop()}${l.files?.length ? `, in ${l.files.join(", ")}` : ""})`).join("\n")}\n\n` : ""}${own && dismissals(ref).length ? `I've dismissed these findings before. Don't raise them again unless the reason no longer holds:\n${dismissals(ref).map((x) => `- ${x.title} (${x.path}): ${x.reason}`).join("\n")}\n\n` : ""}${own ? "Then draft the findings for me to fix, each body saying what's wrong and the fix. Make no code changes, push nothing and post nothing to the PR." : "Then draft the findings to pass on as a code reviewer, as inline comments on the PR. Make no code changes and post nothing to the PR."}
 
 Write the drafts as JSON to \`${file(ref)}\` (create the folder if needed), replacing any earlier file:
 
@@ -69,23 +91,29 @@ export function readDrafts(ref: string): ReviewDrafts | null {
   if (!existsSync(f)) return null;
   try {
     const d = JSON.parse(readFileSync(f, "utf8"));
-    const findings: Draft[] = (d.findings ?? []).map((x: any, i: number) => ({
-      id: i, path: String(x.path ?? ""), line: Number(x.line) || 0, start_line: x.start_line ? Number(x.start_line) : null,
-      rank: RANKS.includes(x.rank) ? x.rank : "should-do", title: String(x.title ?? ""), body: String(x.body ?? ""),
-    })).sort((a: Draft, b: Draft) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank));
+    const gone = dismissals(ref);
+    const findings: Draft[] = (d.findings ?? []).map((x: any, i: number) => {
+      const f: Draft = {
+        id: i, path: String(x.path ?? ""), line: Number(x.line) || 0, start_line: x.start_line ? Number(x.start_line) : null,
+        rank: RANKS.includes(x.rank) ? x.rank : "should-do", title: String(x.title ?? ""), body: String(x.body ?? ""),
+      };
+      const g = gone.find((y) => sameFinding(y, f));
+      return g ? { ...f, dismissed: { reason: g.reason, at: g.at } } : f;
+    }).sort((a: Draft, b: Draft) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank));
     return { pr: ref, sha: String(d.sha ?? ""), findings, posted: d.posted ?? null };
   } catch (e) {
     return { pr: ref, sha: "", findings: [], posted: null, error: `can't read the drafts: ${(e as Error).message}` };
   }
 }
 
-/** Refs with drafts not yet posted, and how many findings each holds. */
+/** Refs with drafts not yet posted, and how many open findings each holds. */
 export function pendingDrafts(): Map<string, number> {
   const out = new Map<string, number>();
   for (const name of readdirSync(DIR).filter((n) => n.endsWith(".json"))) {
     const ref = name.slice(0, -5).replace("__", "/").replace("__", "#");
     const d = readDrafts(ref);
-    if (d && !d.posted && d.findings.length) out.set(ref, d.findings.length);
+    const n = d ? openFindings(d).length : 0;
+    if (d && !d.posted && n) out.set(ref, n);
   }
   return out;
 }

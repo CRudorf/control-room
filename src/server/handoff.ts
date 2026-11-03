@@ -11,7 +11,7 @@ import { DEV, ROOT } from "./config";
 import { db } from "./db";
 import { note } from "./runner";
 import { herdrState, request } from "./herdr";
-import { draftsFile, readDrafts, reviewPrompt } from "./review";
+import { draftsFile, openFindings, readDrafts, reviewPrompt } from "./review";
 
 const short = (repo: string) => repo.split("/").pop()!;
 const slug = (s: string, n = 20) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, n).replace(/-$/, "");
@@ -30,9 +30,11 @@ export function tasksFor(it: WorkItem): HandoffTask[] {
       out.push({ kind: "ci", pr: ref, label: `Fix CI on #${p.number}`, prompt:
         `${where}\n\nCI is failing. Find the failing jobs with \`gh pr checks ${p.number} -R ${p.repo}\` and their logs, and work out whether it's the change or a flake. ${branch} If it's the change, fix it and run the failing check locally.\n\nCommit locally and don't push. Tell me what failed, why, and what you changed, and wait for my go-ahead to push. If it's a flake, say so and change nothing.` });
     const d = readDrafts(ref);
-    if (d && !d.posted && d.findings.length && (p.head.startsWith(d.sha) || d.sha.startsWith(p.head)))
-      out.push({ kind: "fixreview", pr: ref, label: `Fix ${d.findings.length} self-review finding${d.findings.length > 1 ? "s" : ""} on #${p.number}`, prompt:
-        `${where}\n\nMy self-review of this PR left findings in \`${draftsFile(ref)}\`; read it. ${branch} Fix each blocking, important and should-do finding, and the nits that are quick. Verify each fix by running the code, then run the checks that cover what you touched.\n\nCommit locally and don't push. Then show me what you fixed, what you left and why, and wait for my go-ahead to push.` });
+    const open = d ? openFindings(d) : [];
+    const skip = d?.findings.filter((f) => f.dismissed) ?? [];
+    if (d && !d.posted && open.length && (p.head.startsWith(d.sha) || d.sha.startsWith(p.head)))
+      out.push({ kind: "fixreview", pr: ref, label: `Fix ${open.length} self-review finding${open.length > 1 ? "s" : ""} on #${p.number}`, prompt:
+        `${where}\n\nMy self-review of this PR left findings in \`${draftsFile(ref)}\`; read it. ${branch} Fix each blocking, important and should-do finding, and the nits that are quick.${skip.length ? ` Leave these alone, I dismissed them:\n${skip.map((f) => `- ${f.title} (${f.path}): ${f.dismissed!.reason}`).join("\n")}\n` : ""} Verify each fix by running the code, then run the checks that cover what you touched.\n\nCommit locally and don't push. Then show me what you fixed, what you left and why, and wait for my go-ahead to push.` });
     if (p.feedback?.length)
       out.push({ kind: "feedback", pr: ref, label: `Address feedback on #${p.number}`, prompt:
         `Run \`~/.claude/scripts/prs.py prompt ${ref}\` and follow the prompt it prints.` });

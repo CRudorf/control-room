@@ -29,7 +29,7 @@ import { guardrails } from "./guardrails";
 import { setupTracker, trackerState } from "./tracker";
 import { checkHookPrompt, checkLine, checksFor, reposWithoutChecks } from "./checks";
 import { openArtifact } from "./artifacts";
-import { diffLines, postReview, readDrafts, type Picked } from "./review";
+import { diffLines, dismissFinding, postReview, readDrafts, type Picked } from "./review";
 import { deleteRun, listWorktrees, removeWorktrees, startCleanup } from "./cleanup";
 import { confirmPassing, getRun, listRuns, runFile, setConfirm, startRun, stopRun, tail, trackedLogEmails, filesSince, verifyPrompt as verifyRunPrompt } from "./verify";
 import { bootstrap, guard, HOSTNAME, token } from "./security";
@@ -475,6 +475,24 @@ const server = Bun.serve({
         return Response.json({ drafts, head: p.head, pushedSince: !!drafts.sha && drafts.sha !== p.head, outside });
       }),
     },
+    "/api/selfreview": {
+      // The user's own PRs' self-review drafts, while they match the PR's head.
+      GET: api(async (req) => {
+        const it = snapshot().items.find((i) => i.id === new URL(req.url).searchParams.get("item"));
+        if (!it) return Response.json({ error: "no such item" }, { status: 404 });
+        const reviews = it.prs.filter((p) => p.role === "mine").flatMap((p) => {
+          const d = readDrafts(`${p.repo}#${p.number}`);
+          return d && !d.posted && d.findings.length && (p.head.startsWith(d.sha) || d.sha.startsWith(p.head)) ? [d] : [];
+        });
+        return Response.json({ reviews });
+      }),
+    },
+    "/api/selfreview/dismiss": { POST: api(async (req) => {
+      const { pr, id, reason } = (await req.json()) as { pr: string; id: number; reason: string | null };
+      try { dismissFinding(pr, id, reason); } catch (e) { return Response.json({ error: (e as Error).message }, { status: 404 }); }
+      publish();
+      return Response.json({ ok: true });
+    }) },
     "/api/review/post": { POST: api(async (req) => {
       const { item, picked, event } = (await req.json()) as { item: string; picked: Picked[]; event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES" };
       const it = snapshot().items.find((i) => i.id === item);

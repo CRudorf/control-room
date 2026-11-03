@@ -365,7 +365,13 @@ export function subscribe(fn: (s: Snapshot) => void) {
 let told: Set<string> | null = load<string[]>("told") ? new Set(load<string[]>("told")) : null;
 
 function tellAgents(items: Snapshot["items"]) {
-  const { tells, current } = tellsFor(items, told, owned(loopsNow()));
+  // Self-reviews with findings still open on the PR's head go back to the PR's own session.
+  const pending = pendingDrafts();
+  const reviews = new Map(items.flatMap((it) => it.prs).flatMap((p) => {
+    const d = p.role === "mine" && pending.has(prRef(p)) ? readDrafts(prRef(p)) : null;
+    return d && (p.head.startsWith(d.sha) || d.sha.startsWith(p.head)) ? [[prRef(p), d] as const] : [];
+  }));
+  const { tells, current } = tellsFor(items, told, owned(loopsNow()), reviews);
   const changed = !told || told.size !== current.size || [...current].some((k) => !told!.has(k));
   told = current;
   if (changed) save("told", [...current]);

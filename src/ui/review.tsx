@@ -87,3 +87,53 @@ export function Curate({ it }: { it: WorkItem }) {
     </div>
   );
 }
+
+/** The self-review's findings on the user's own PRs: each can be dismissed with a reason, or brought back. */
+export function SelfReview({ it }: { it: WorkItem }) {
+  const [reviews, setReviews] = useState<ReviewDrafts[]>([]);
+  const [why, setWhy] = useState<Record<string, string>>({});
+  const [open, setOpen] = useState<string | null>(null);
+  const load = async () => {
+    const r = await fetch(`/api/selfreview?item=${encodeURIComponent(it.id)}`).then((x) => x.json()).catch(() => null);
+    if (r?.reviews) setReviews(r.reviews);
+  };
+  useEffect(() => { setOpen(null); void load(); }, [it.id, it.why]);
+  const dismiss = async (pr: string, id: number, reason: string | null) => {
+    const r = await post("/api/selfreview/dismiss", { pr, id, reason });
+    if (r.error) return toast(`Couldn't: ${r.error}`);
+    setOpen(null);
+    void load();
+  };
+  if (!reviews.some((d) => d.findings.length)) return null;
+  return (
+    <div className="selfreview">
+      {reviews.map((d) => d.findings.map((f) => {
+        const k = `${d.pr}:${f.id}`;
+        return (
+          <div key={k} className={`finding ${f.dismissed ? "off" : ""}`}>
+            <div>
+              <div className="fh"><span className={`rank ${f.rank}`}>{f.rank}</span> <b>{f.title}</b> <span className="st dim">self-review · {f.path}:{f.start_line ? `${f.start_line}-` : ""}{f.line}</span></div>
+              {f.dismissed ? <p className="st dim">Dismissed: {f.dismissed.reason}</p> : <p>{f.body}</p>}
+              {open === k ? (
+                <div className="draft">
+                  <textarea rows={2} autoFocus placeholder="Why it doesn't need fixing…" value={why[k] ?? ""} onChange={(e) => setWhy({ ...why, [k]: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && why[k]?.trim()) { e.preventDefault(); void dismiss(d.pr, f.id, why[k]); } }} />
+                  <div className="row-acts">
+                    <button className="btn sm primary" disabled={!why[k]?.trim()} onClick={() => dismiss(d.pr, f.id, why[k])}>Dismiss</button>
+                    <button className="btn sm" onClick={() => setOpen(null)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row-acts">
+                  {f.dismissed
+                    ? <button className="btn sm" onClick={() => dismiss(d.pr, f.id, null)}>Undo</button>
+                    : <button className="btn sm" title="Drops it from the board and from the fix agent's list; a re-review won't raise it again" onClick={() => setOpen(k)}>Dismiss</button>}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }))}
+    </div>
+  );
+}

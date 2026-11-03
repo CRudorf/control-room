@@ -120,7 +120,7 @@ export type Reason = { text: string; weight: number; pr?: string; handoff?: Hand
 export type HandoffTask = { kind: "conflicts" | "ci" | "feedback" | "review" | "selfreview" | "fixreview" | "stack" | "custom"; pr: string | null; label: string; prompt: string };
 
 /** One finding a review agent drafted as an inline comment. */
-export type Draft = { id: number; path: string; line: number; start_line: number | null; rank: "blocking" | "important" | "should-do" | "nit"; title: string; body: string };
+export type Draft = { id: number; path: string; line: number; start_line: number | null; rank: "blocking" | "important" | "should-do" | "nit"; title: string; body: string; dismissed?: { reason: string; at: string } };
 
 /** A review agent's drafts for one PR, pinned to the commit it reviewed. */
 export type ReviewDrafts = { pr: string; sha: string; findings: Draft[]; posted: { at: string; url: string; event: string; count: number } | null; error?: string };

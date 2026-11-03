@@ -298,6 +298,9 @@ textarea.prompt { width:100%; min-height:220px; resize:vertical; border:1px soli
 .banner { display:flex; gap:10px; align-items:center; justify-content:space-between; padding:8px 10px; margin-bottom:8px; border-radius:4px; background:color-mix(in srgb, var(--warn) 18%, var(--panel)); font-weight:600; }
 .finding { display:grid; grid-template-columns:20px 1fr; gap:8px; padding:8px 0; border-top:1px dashed var(--rule); }
 .finding.off { opacity:.55; }
+.selfreview { margin-bottom:10px; }
+.selfreview .finding { grid-template-columns:1fr; }
+.selfreview .finding:first-child { border-top:0; padding-top:0; }
 .finding .fh { font-size:13px; }
 .finding p { margin:4px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; cursor:text; font-size:13.5px; }
 .finding textarea { width:100%; margin-top:4px; resize:vertical; border:1px solid var(--rule); background:var(--rack); color:var(--ink); border-radius:4px; padding:7px 9px; font:13px/1.45 Archivo, sans-serif; }

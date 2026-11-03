@@ -8,7 +8,7 @@ import { VerifyStrip } from "./verify";
 import { workLines } from "../shared/branches";
 import { Cleanup } from "./cleanup";
 import { StartAgent } from "./handoff";
-import { Curate } from "./review";
+import { Curate, SelfReview } from "./review";
 import { EffortSheet, DependencySheet, MoveSheet, ParkSheet, Removed, RemoveSheet } from "./lists";
 import { StartBox } from "./start";
 import { AskSheet, MoveJiraSheet } from "./jira";
@@ -666,7 +666,7 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
     <div className="pane" id="threads">
       <h3><span>{it.keyKind === "review" ? "Review" : "Open feedback"}</span><span className="st dim">{it.keyKind === "review" ? "" : threads.length} <Expand on={cur === "feedback"} onClick={() => toggle("feedback")} /></span></h3>
       <div className="in">
-        {it.keyKind === "review" ? <ReviewInfo it={it} /> : <Threads it={it} plain={plain} ago={ago} />}
+        {it.keyKind === "review" ? <ReviewInfo it={it} /> : <><SelfReview it={it} /><Threads it={it} plain={plain} ago={ago} /></>}
       </div>
     </div>
   );
