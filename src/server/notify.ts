@@ -21,6 +21,7 @@ export function signalsOf(it: WorkItem): Signal[] {
     if (finished !== null) out.push({ key: `agent-done:${a.pane}@${finished}`, text: `agent ${name} finished`, loud: false, triggers: true, anyLane: true });
   }
   if (it.park?.woke) out.push({ key: `unpark:${it.id}@${it.park.setAt}`, text: `back from parked: ${it.park.woke}`, loud: false, triggers: true, anyLane: true });
+  if (it.commentWait?.woke) out.push({ key: `comment:${it.id}@${it.commentWait.setAt}:${it.commentWait.woke}`, text: it.commentWait.woke, loud: true, triggers: true, anyLane: true });
   for (const g of it.dependencies ?? []) if (g.opened) out.push({ key: `dependency:${g.ref}@${g.setAt}`, text: `unblocked: ${g.opened}`, loud: false, triggers: true, anyLane: true });
   // Waiting on the author ended: the ball is back with the user.
   if (it.hold?.woke) out.push({ key: `woke:${it.hold.ref}@${it.hold.setAt}`, text: `${it.hold.woke} since you started waiting`, loud: true, triggers: true });

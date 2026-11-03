@@ -17,7 +17,7 @@ import { pendingDrafts, readDrafts } from "./review";
 import { announce } from "./notifier";
 import { runs } from "./runs";
 import { pickedNow } from "./suggestions";
-import { slug, applyGates, applyJira, applyPicked, approvedShipped, applyParks, applyRuns, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
+import { quietAgentsByKey, slug, applyGates, applyJira, applyPicked, approvedShipped, applyCommentWaits, applyParks, applyRuns, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
 import { jiraError, jiraIssues, startJira, transition } from "./jira";
 import { noteSessions, startUsage, usageFor } from "./usage";
 import { machine, type Machine } from "./health";
@@ -140,6 +140,17 @@ export function setPark(item: string, note: string | null, until: string | null)
   publish();
 }
 
+const commentWaits = () => load<Record<string, string>>("comment_waits") ?? {};
+
+/** Starts a wait for a comment on an issue, or ends it. Only comments newer than the start count. */
+export function setCommentWait(key: string, on: boolean) {
+  const all = commentWaits();
+  if (on) all[key] = new Date().toISOString(); else delete all[key];
+  save("comment_waits", all);
+  record(detail(slug(key)), on ? "wait-for-comment" : "stop-waiting", key, on ? "waiting for a comment" : "stopped waiting");
+  publish();
+}
+
 type DependencyRow = { ref: string; set_at: string; on_ref: string | null; step: string };
 const dependencies = () => new Map(db.query<DependencyRow, []>("SELECT * FROM dependencies").all()
   .map((r) => [r.ref, { ref: r.ref, setAt: r.set_at, on: r.on_ref, step: r.step } satisfies Dependency]));
@@ -171,6 +182,17 @@ export function setMove(ref: string, into: Move, reset: boolean) {
   if (reset) db.query("DELETE FROM moves WHERE ref = ?").run(ref);
   else db.query("INSERT OR REPLACE INTO moves (ref, into_item, into_key, into_kind) VALUES (?, ?, ?, ?)").run(ref, into?.id ?? null, into?.key ?? null, into?.kind ?? null);
   record(detail(into?.id ?? null), reset ? "unmove" : into ? "attach" : "split", ref, reset ? "back to its own key" : into ? `into ${into.key}` : "its own work item");
+  publish();
+}
+
+const agentMoves = () => new Map(Object.entries(load<Record<string, Move>>("agent_moves") ?? {}));
+
+/** Moves an agent into another work item, or out on its own (`into` null); `reset` lets its names decide again. */
+export function setAgentMove(agent: string, into: Move, reset: boolean) {
+  const all = Object.fromEntries(agentMoves());
+  if (reset) delete all[agent]; else all[agent] = into;
+  save("agent_moves", all);
+  record(detail(into?.id ?? null), reset ? "unmove" : into ? "attach" : "split", agent, reset ? "back to what its names say" : into ? `into ${into.key}` : "its own work item");
   publish();
 }
 
@@ -255,6 +277,19 @@ export async function nudge(reviewer: string, text: string) {
   publish();
 }
 
+/** "repo#12" to its work item's key, for PRs that left the board: history, then the PRs seen to finish. */
+let refKeys: { at: number; by: Map<string, string> } | null = null;
+const keyOfRef = (ref: string) => {
+  if (!refKeys || Date.now() - refKeys.at > 60_000) {
+    const by = new Map<string, string>();
+    const name = (r: string) => r.split("/").pop()!.toLowerCase();
+    for (const f of prFacts()) by.set(name(f.ref), f.feature);
+    for (const r of db.query<FinishedRow, []>("SELECT * FROM finished").all()) by.set(name(r.ref), featureOf(r.title, r.branch, r.repo));
+    refKeys = { at: Date.now(), by };
+  }
+  return refKeys.by.get(ref) ?? null;
+};
+
 /** A work item's merged PRs, by the user's PR history: "repo#N". */
 let mergedCache: { at: number; by: Map<string, string[]> } | null = null;
 const mergedPrs = (key: string) => {
@@ -291,12 +326,18 @@ export function snapshot(): Snapshot {
     const ref = `${p.repo}#${p.number}`, d = p.role === "mine" && drafts.has(ref) ? readDrafts(ref) : null;
     if (d && !(p.head.startsWith(d.sha) || d.sha.startsWith(p.head))) drafts.delete(ref);
   }
-  const grouped = groupWorkItems(all.map(withBehind).map(withStack(all)), h.agents, holds(), reranHeads(), drafts, moves(), new Set([...shutGates(gs, done), ...running(loopsNow())]));
+  const grouped = groupWorkItems(all.map(withBehind).map(withStack(all)), h.agents, holds(), reranHeads(), drafts, moves(), new Set([...shutGates(gs, done), ...running(loopsNow())]), { keyOfRef, agentMoves: agentMoves() });
   const issues = new Map([...jiraIssues(), ...trackerIssues()]);
   const ef = efforts();
-  const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs, parkOf }), pickedNow(), issues), gs, done), runs());
+  const quiet = quietAgentsByKey(h.agents, { keyOfRef, agentMoves: agentMoves() });
+  const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs, parkOf, quietAgents: (k) => quiet.get(k) ?? [] }), pickedNow(), issues), gs, done), runs());
   const mine = myLastActions();
-  const items = sortItems(rankNext(applyGuides(applyParks(applyLoop(blocked, views(blocked, loopsNow())), parks()))))
+  // A wait ends for good when its issue is done.
+  const waits = commentWaits();
+  const openWaits = Object.fromEntries(Object.entries(waits).filter(([k]) => issues.get(k)?.category !== "done"));
+  if (Object.keys(openWaits).length !== Object.keys(waits).length) save("comment_waits", openWaits);
+  const waited = applyCommentWaits(applyLoop(blocked, views(blocked, loopsNow())), openWaits, issues, { branchesFor, quietAgents: (k) => quiet.get(k) ?? [] });
+  const items = sortItems(rankNext(applyGuides(applyParks(waited, parks()))))
     .map((it) => {
       const u = usageFor(it), a = artifactsFor(it), e = ef.get(it.key), c = checksFor(it.prs);
       return { ...withTasks(it), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
@@ -446,7 +487,7 @@ export const refresh = () => step("full");
 const jiraKeys = () => {
   const s = snapshot();
   // An issue a rule parked stays in the query after it moves to a done status, so that move can finish it.
-  return [...Object.keys(ruleParks), ...s.items.filter((i) => i.keyKind === "jira").map((i) => i.key), ...s.finished.map((f) => f.key).filter((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k))];
+  return [...Object.keys(ruleParks), ...Object.keys(commentWaits()), ...s.items.filter((i) => i.keyKind === "jira").map((i) => i.key), ...s.finished.map((f) => f.key).filter((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k))];
 };
 
 /** Moves a work item's Jira issue as the board suggested. */

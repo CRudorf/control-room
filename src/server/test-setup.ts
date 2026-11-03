@@ -9,4 +9,4 @@ process.env.CR_PROJECT = "test";
 process.env.CR_PROJECTS_PATH = join(process.env.CR_STATE_DIR ?? tmpdir(), "projects-test.json");
 process.env.CR_SETTINGS = join(process.env.CR_STATE_DIR ?? tmpdir(), "settings-test.json");
 writeFileSync(process.env.CR_PROJECTS_PATH, JSON.stringify({ default: "test", owners: { acme: "test", "o": "test", org: "test" }, repos: {} }));
-writeFileSync(process.env.CR_SETTINGS, JSON.stringify({ flow: { stages: ["staging", "master"], testingStatus: "Testing", approvedStatus: "Ready for Deployment", who: "Product", copySuffix: "-stage" } }));
+writeFileSync(process.env.CR_SETTINGS, JSON.stringify({ flow: { stages: ["staging", "master"], testingStatus: "Testing", approvedStatus: "Approved", who: "Product", copySuffix: "-stage" } }));

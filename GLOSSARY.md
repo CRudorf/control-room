@@ -40,6 +40,8 @@
 
 **Parked**: A work item or review request the user has set aside on purpose, with a note saying why and optionally an until-date. Sits in a collapsed Parked section under the lanes and never notifies. Wakes on its own when a person does something new on it (feedback, a review re-request, a mention), when one of its agents waits for input (its question is the why, in My turn), or the date passes; bot comments, CI and pushes don't wake it.
 
+**Wait for a comment**: The user marks a Jira work item as waiting for a comment. It sits in Waiting on others until a person other than the user comments on the ticket, then shows in My turn. App comments don't count. The user's reply puts it back in Waiting on others. It stays until the user stops it or the issue is done. A failed Testing step, feedback on its PRs or an agent waiting for input also ends the wait.
+
 **Park rule**: A project setting that parks an issue when it reaches a status, and names what takes it off Parked: a finish condition, a number of days, or a move to another status. The user can also unpark it by hand. An open PR or a running agent keeps the item in its lane.
 
 **Waiting on author**: A review request the user has handed back to its author until they act, with an optional note. It sits in Waiting on others and wakes back into Asked of me, with a notification, when the author or anyone but the user pushes, comments, replies or mentions the user.

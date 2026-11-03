@@ -253,7 +253,27 @@ type Group = { key: string; kind: WorkItem["keyKind"]; prs: PrRow[]; agents: Age
  * looking at or is working.
  * `moves` overrides the key of PRs moved by hand; `blocked` PRs don't count toward the lane.
  */
-export function groupWorkItems(rows: PrRow[], agents: Agent[] = [], holds: Map<string, Hold> = new Map(), reran: Set<string> = new Set(), drafts: Map<string, number> = new Map(), moves: Map<string, Move> = new Map(), blocked: Set<string> = new Set()): WorkItem[] {
+/** How agents with no key in their names find a work item: a PR they name, or the user's own choice. */
+export type AgentCtx = { keyOfRef?: (ref: string) => string | null; agentMoves?: Map<string, Move> };
+
+/**
+ * Idle agents that groupWorkItems leaves off the board, by the issue they name. An idle agent gets no
+ * row of its own, but an issue that is on the board for another reason still shows it.
+ */
+export function quietAgentsByKey(agents: Agent[], ctx: AgentCtx = {}): Map<string, Agent[]> {
+  const projects = new Set(KNOWN_PROJECTS);
+  const by = new Map<string, Agent[]>();
+  for (const a of agents) {
+    if (a.status !== "idle" || a.finishedSeq !== null || ctx.agentMoves?.has(agentName(a))) continue;
+    const text = `${a.label} ${a.name ?? ""}`;
+    const ref = text.match(/([\w.-]+)#(\d+)/);
+    const key = trackerKey(text, projects) ?? (ref ? ctx.keyOfRef?.(`${ref[1]}#${ref[2]}`.toLowerCase()) ?? null : null);
+    if (key) by.set(key, [...(by.get(key) ?? []), a]);
+  }
+  return by;
+}
+
+export function groupWorkItems(rows: PrRow[], agents: Agent[] = [], holds: Map<string, Hold> = new Map(), reran: Set<string> = new Set(), drafts: Map<string, number> = new Map(), moves: Map<string, Move> = new Map(), blocked: Set<string> = new Set(), agentCtx: AgentCtx = {}): WorkItem[] {
   const mine = rows.filter((r) => r.role === "mine");
   const requested = rows.filter((r) => r.role === "requested");
 
@@ -319,11 +339,27 @@ export function groupWorkItems(rows: PrRow[], agents: Agent[] = [], holds: Map<s
     return tails.find(([tail]) => words.includes(tail))?.[1] ?? null;
   };
 
+  /** The agent's work item by its key: the group that has the key, else a new group for it. */
+  const pushByKey = (a: Agent, key: string, known?: string) => {
+    const own = (known && groups.has(known) ? known : null) ?? groupOfKey.get(key) ?? `a-${slug(key)}`;
+    const g = groups.get(own) ?? { key, kind: "agent" as const, prs: [], agents: [] };
+    g.agents.push(a);
+    groups.set(own, g);
+  };
   for (const a of agents) {
+    // The user's choice in the Move sheet comes first.
+    const name = agentName(a);
+    if (agentCtx.agentMoves?.has(name)) {
+      const into = agentCtx.agentMoves.get(name);
+      pushByKey(a, into?.key ?? name, into?.id);
+      continue;
+    }
     const text = `${a.label} ${a.name ?? ""}`;
     const ref = text.match(/([\w.-]+)#(\d+)/);
     const sentry = errorKey(text);
-    const jira = trackerKey(text, projects);
+    // A tab can name a PR that has left the board, such as "selfreview repo#12": that PR's key counts.
+    const refKey = ref ? agentCtx.keyOfRef?.(`${ref[1]}#${ref[2]}`.toLowerCase()) ?? null : null;
+    const jira = trackerKey(text, projects) ?? refKey;
     const id =
       (a.repo && a.branch && groupOfPr.get(`${a.repo}@${a.branch}`.toLowerCase())) ||
       (a.repo && a.upstream && groupOfPr.get(`${a.repo}@${a.upstream}`.toLowerCase())) ||
@@ -347,6 +383,10 @@ export function groupWorkItems(rows: PrRow[], agents: Agent[] = [], holds: Map<s
   const items = [...groups.entries()].map(([id, g]) =>
     itemFrom(id, g.key, g.kind, g.prs, g.agents, g.kind === "review" ? holds.get(prRef(g.prs[0])) : undefined, reran, drafts, blocked));
   for (const it of items) if (movedInto.has(it.id)) it.moved = movedInto.get(it.id);
+  for (const it of items) {
+    const chosen = it.agents.map(agentName).filter((n) => agentCtx.agentMoves?.has(n));
+    if (chosen.length) it.agentsMoved = chosen;
+  }
   const byJira = new Map(items.filter((i) => i.keyKind === "jira").map((i) => [i.key, i.id]));
   for (const it of items) {
     const jira = reviewIds.get(it.id);
@@ -387,6 +427,46 @@ export function applyParks(items: WorkItem[], parks: Map<string, Park>, now = Da
     if (woke) return { ...it, ...(it.agents.some((a) => a.status === "blocked") ? { lane: "mine" as const } : {}), park: { ...park, woke }, why: `woke: ${woke} · ${it.why}` };
     const until = park.until ? ` · until ${new Date(park.until).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}` : "";
     return { ...it, lane: "parked", urgency: 0, why: `${park.note ? `“${park.note}”` : "parked"}${until}`, park: { ...park, woke: null } };
+  });
+}
+
+/** What ends a wait for a comment: a failed Testing step after the wait began, a comment by another person newer than the wait and the user's last comment, or what wakes a park. */
+export function commentWaitWoke(it: WorkItem, setAt: string, issue: Issue | undefined, now = Date.now()): string | null {
+  const failed = issue?.testing?.failed;
+  if (failed && ts(failed.at) > ts(setAt)) return `${failed.by ?? "someone"} moved it from ${failed.from} back to ${failed.to}`;
+  const c = issue?.comments;
+  const other = c?.lastOtherComment;
+  if (other && ts(other.at) > Math.max(ts(setAt), ts(c?.lastMyCommentAt ?? ""))) {
+    const line = other.firstLine.length > 140 ? `${other.firstLine.slice(0, 139)}…` : other.firstLine;
+    return `${other.author ?? "someone"} commented${line ? `: “${line}”` : ""}`;
+  }
+  return parkWoke(it, { item: it.id, setAt, until: null, note: "" }, now);
+}
+
+/**
+ * Waits for a comment: the item sits in Waiting on others until a comment wakes it into My turn. The
+ * user's reply puts it back. An issue the board would drop, such as one in review with no PR, stays on.
+ */
+export function applyCommentWaits(items: WorkItem[], waits: Record<string, string>, issues: Map<string, Issue>, ctx: Pick<JiraCtx, "branchesFor" | "quietAgents"> = {}, now = Date.now()): WorkItem[] {
+  const onBoard = new Set(items.map((it) => it.key));
+  const added = Object.keys(waits).flatMap((key): WorkItem[] => {
+    const j = issues.get(key);
+    if (onBoard.has(key) || !j || j.category === "done") return [];
+    const bs = ctx.branchesFor?.(key) ?? [], agents = ctx.quietAgents?.(key) ?? [];
+    return [{
+      id: slug(key), key, keyKind: "jira", title: j.summary, repos: [...new Set(bs.map((b) => short(b.repo)))], prs: [], agents, lane: "waiting", why: "", urgency: 0,
+      updated: j.updated ?? new Date(0).toISOString(), cells: cellsFor([], "waiting", agents), related: [], primary: { label: `Open ${key}`, url: j.url },
+      jira: { status: j.status, url: j.url, summary: j.summary, suggest: null, parent: j.parent ?? null },
+      ...(bs.length ? { branches: bs } : {}),
+    }];
+  });
+  return [...items, ...added].map((it) => {
+    const setAt = waits[it.key];
+    if (!setAt) return it;
+    const woke = commentWaitWoke(it, setAt, issues.get(it.key), now);
+    const commentWait = { setAt, woke };
+    if (woke) return { ...it, commentWait, lane: "mine" as const, urgency: Math.max(it.urgency, 1), why: woke };
+    return { ...it, commentWait, lane: "waiting" as const, urgency: 0, why: "Waiting for a comment on the ticket" };
   });
 }
 
@@ -449,7 +529,7 @@ export function suggestFinished(j: Issue, f: FinishedItem): Suggested | null {
   return suggestion(j, to(j, /merged/i) ?? to(j, /^done$/i), "every PR merged");
 }
 
-export type JiraCtx = { branchesFor?: (key: string) => ItemBranch[]; mergedPrs?: (key: string) => string[]; parkOf?: (issue: Issue, branches: ItemBranch[]) => ParkState };
+export type JiraCtx = { branchesFor?: (key: string) => ItemBranch[]; mergedPrs?: (key: string) => string[]; parkOf?: (issue: Issue, branches: ItemBranch[]) => ParkState; quietAgents?: (key: string) => Agent[] };
 
 /**
  * Puts Jira on the board: each Jira work item gets its issue's status, its branches and a suggested
@@ -477,9 +557,10 @@ export function applyJira(items: WorkItem[], issues: Map<string, Issue>, ctx: Ji
   for (const j of issues.values()) {
     if (!j.mine || onBoard.has(j.key)) continue;
     const bs = branchesOf(j.key);
+    const quiet = ctx.quietAgents?.(j.key) ?? [];
     const base = {
-      id: slug(j.key), key: j.key, keyKind: "jira" as const, title: j.summary, repos: [...new Set(bs.map((b) => short(b.repo)))], prs: [], agents: [],
-      updated: j.updated ?? new Date(0).toISOString(), cells: cellsFor([], "mine", []), related: [],
+      id: slug(j.key), key: j.key, keyKind: "jira" as const, title: j.summary, repos: [...new Set(bs.map((b) => short(b.repo)))], prs: [], agents: quiet,
+      updated: j.updated ?? new Date(0).toISOString(), cells: cellsFor([], "mine", quiet), related: [],
       jira: { status: j.status, url: j.url, summary: j.summary, suggest: null, parent: j.parent ?? null },
       ...(bs.length ? { branches: bs } : {}),
     };

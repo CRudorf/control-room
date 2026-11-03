@@ -2,7 +2,7 @@ import index from "../ui/index.html";
 import { note as recordNote } from "./runner";
 import { join } from "node:path";
 import { DEV, PORT, ROOT } from "./config";
-import { finishedSince, adopt, copyAsk, moveJira, nudge, publish, setEffort, refetch, refresh, remove, removed, restore, setDependency, setHold, setMove, setPark, snapshot, start, subscribe } from "./feed";
+import { finishedSince, adopt, copyAsk, moveJira, nudge, publish, setEffort, refetch, refresh, remove, removed, restore, setDependency, setHold, setAgentMove, setCommentWait, setMove, setPark, snapshot, start, subscribe } from "./feed";
 import { startFeedbackTask } from "./feedbacktask";
 import type { Move } from "../shared/types";
 import { markAddressed, postReplies, rerequest, rerunCi, resolveThreads, updateBranch, type Reply } from "./actions";
@@ -249,6 +249,11 @@ const server = Bun.serve({
       setPark(item, note, until ?? null);
       return Response.json({ ok: true });
     }) },
+    "/api/comment-wait": { POST: api(async (req) => {
+      const { key, on } = (await req.json()) as { key: string; on: boolean };
+      setCommentWait(key, !!on);
+      return Response.json({ ok: true });
+    }) },
     "/api/start": {
       GET: api((req) => Response.json(suggest(new URL(req.url).searchParams.get("signal") ?? ""))),
       POST: api(async (req) => {
@@ -348,8 +353,10 @@ const server = Bun.serve({
       return Response.json({ ok: true });
     }) },
     "/api/move": { POST: api(async (req) => {
-      const { ref, into, reset } = (await req.json()) as { ref: string; into: Move; reset?: boolean };
-      setMove(ref, into ?? null, !!reset);
+      const { ref, agent, into, reset } = (await req.json()) as { ref?: string; agent?: string; into: Move; reset?: boolean };
+      if (agent) setAgentMove(agent, into ?? null, !!reset);
+      else if (ref) setMove(ref, into ?? null, !!reset);
+      else return Response.json({ error: "nothing to move" }, { status: 400 });
       return Response.json({ ok: true });
     }) },
     "/api/remove": { POST: api(async (req) => {

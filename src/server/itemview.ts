@@ -48,6 +48,7 @@ export function formatItem(it: WorkItem, lessons: Lesson[], checks: string[] = [
   const out = [`${it.key} (${it.title ? clip(it.title, 100) : it.keyKind}): ${LANE[it.lane]}, ${it.why}`];
   if (it.jira) out.push(`Jira: ${it.jira.status} ${it.jira.url}`);
   if (it.park) out.push(`Parked: ${clip(it.park.note, 160)}${it.park.until ? ` until ${it.park.until}` : ""}`);
+  if (it.commentWait) out.push(it.commentWait.woke ? `Wait for a comment ended: ${clip(it.commentWait.woke, 160)}` : "Waiting for a comment on the ticket");
   if (it.hold) out.push(`Waiting on author: ${clip(it.hold.note, 160)}`);
   for (const g of it.dependencies ?? []) out.push(`Blocked: ${g.ref} waits on ${g.on ?? g.step}`);
   out.push("", it.prs.length ? `PRs (${it.prs.length}):` : "No PRs yet.");

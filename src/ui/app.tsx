@@ -346,6 +346,7 @@ export function App() {
             </div>}
             <button className={`iconbtn ${nextMode ? "on" : ""}`} onClick={() => { back(); setNextMode((x) => !x); setCur(null); }}
               title="Next: what to do, one at a time, in order (n)">Next {nextIds.length} <kbd>n</kbd></button>
+            <div className="navgroup">
             <nav className="pages" aria-label="Pages">
               {NAV.map((n) => (
                 <button key={n.p} className={page === n.p ? "on" : ""} aria-current={page === n.p ? "page" : undefined} onClick={() => open(n.p)} title={`${n.title} (${n.k})`}>
@@ -367,6 +368,7 @@ export function App() {
                   <button role="menuitem" onClick={() => { setHelp(true); setMenu(false); }}><span>Keyboard shortcuts</span><kbd>?</kbd></button>
                 </div>
               </>}
+            </div>
             </div>
           </div>
         </header>
@@ -732,6 +734,9 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
             {it.park && !it.park.woke
               ? <button className="btn on-strip" onClick={() => onUnpark(it)}>Unpark <kbd>p</kbd></button>
               : <button className="btn on-strip" onClick={() => onSheet("park", it)}>Park <kbd>p</kbd></button>}
+            {it.commentWait
+              ? <button className="btn on-strip" onClick={() => void post("/api/comment-wait", { key: it.key, on: false })}>Stop waiting</button>
+              : it.jira?.url.includes("/browse/") && <button className="btn on-strip" title="Move to Waiting on others until someone else comments on the ticket" onClick={() => void post("/api/comment-wait", { key: it.key, on: true })}>Wait for comment</button>}
             <button className="btn on-strip" onClick={() => onSheet("remove", it)}>Remove <kbd>x</kbd></button>
             <button className="btn on-strip" onClick={() => onSheet("dependency", it)}>{it.dependencies?.some((g) => !g.opened) ? "Blocked" : "Dependency"} <kbd>b</kbd></button>
             <button className="btn on-strip" onClick={() => onSheet("move", it)}>Move <kbd>l</kbd></button>

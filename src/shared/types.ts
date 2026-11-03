@@ -193,10 +193,14 @@ export type WorkItem = {
   hold?: Hold & { woke: string | null };
   /** Set while parked, and right after it wakes (`woke` says why) so the wake can notify. */
   park?: Park & { woke: string | null };
+  /** Set while the user waits for a comment on the issue, and after one arrives (`woke` says what ended the wait). */
+  commentWait?: { setAt: string; woke: string | null };
   /** Dependencies on its PRs; `opened` says what lifted one, so the lift can notify. */
   dependencies?: (Dependency & { opened: string | null })[];
   /** PRs that were moved into or out of it by hand. */
   moved?: string[];
+  /** The agents here by the user's choice in the Move sheet. */
+  agentsMoved?: string[];
   /** The effort it belongs to, a level above work items (e.g. retiring a tenant), set by hand. */
   effort?: string;
   /** Handoff docs, run folders and recordings named for it, newest first. */
@@ -239,6 +243,8 @@ export type Issue = {
   transitions: { id: string; name: string; to: string }[];
   /** Acceptance facts, for the user's issues in or just out of the project's acceptance step. */
   testing?: AcceptanceFacts;
+  /** The comment facts of a Jira issue. A wait for a comment reads them. */
+  comments?: { lastMyCommentAt: string | null; lastOtherComment: JiraComment | null };
 };
 
 /** A comment's first line, who wrote it and when. */

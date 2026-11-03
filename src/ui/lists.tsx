@@ -114,38 +114,44 @@ export function DependencySheet({ it, items, onClose }: { it: WorkItem; items: W
 /** Move: put the work item's PRs into another work item, or out on their own. Local only. */
 export function MoveSheet({ it, items, onClose }: { it: WorkItem; items: WorkItem[]; onClose: () => void }) {
   const mine = it.prs.filter((p) => p.role === "mine");
+  const choices = [
+    ...mine.map((p) => ({ id: `pr:${refOf(p)}`, ref: refOf(p), agent: undefined as string | undefined, head: short(refOf(p)), text: p.title, moved: !!it.moved?.includes(refOf(p)) })),
+    ...it.agents.map((a) => { const n = a.name ?? a.label; return { id: `agent:${n}`, ref: undefined as string | undefined, agent: n, head: "agent", text: a.label === n ? n : `${a.label} (${n})`, moved: !!it.agentsMoved?.includes(n) }; }),
+  ];
   const targets = items.filter((x) => x.id !== it.id && x.keyKind !== "review" && x.keyKind !== "agent");
-  const [ref, setRef] = useState(mine[0] ? refOf(mine[0]) : "");
-  const [to, setTo] = useState(mine.length > 1 ? "split" : targets[0]?.id ?? "");
-  const moved = it.moved?.includes(ref);
+  const [pick, setPick] = useState(choices[0]?.id ?? "");
+  const [to, setTo] = useState(choices.length > 1 ? "split" : targets[0]?.id ?? "");
+  const c = choices.find((x) => x.id === pick);
   const go = async (reset = false) => {
+    if (!c) return;
     const t = targets.find((x) => x.id === to);
     const into: Move = t ? { id: t.id, key: t.key, kind: t.keyKind } : null;
-    const r = await post("/api/move", { ref, into, reset });
-    toast(r.error ? `Couldn't move: ${r.error}` : reset ? `${short(ref)} is back where its key puts it` : `Moved ${short(ref)} ${t ? `into ${t.key}` : "out on its own"}`);
+    const r = await post("/api/move", { ...(c.agent ? { agent: c.agent } : { ref: c.ref }), into, reset });
+    const what = c.agent ?? short(c.ref!);
+    toast(r.error ? `Couldn't move: ${r.error}` : reset ? `${what} is back where it matched` : `Moved ${what} ${t ? `into ${t.key}` : "out on its own"}`);
     onClose();
   };
-  if (!mine.length) return (
+  if (!choices.length) return (
     <Sheet title={`Move ${it.key}`} onClose={onClose}>
-      <p>Only your own PRs can be moved.</p>
+      <p>This item has no open PR of yours and no agent, so there is nothing to move.</p>
       <div className="row"><button className="btn" onClick={onClose}>OK</button></div>
     </Sheet>
   );
   return (
-    <Sheet title={`Move a PR of ${it.key}`} onClose={onClose}>
+    <Sheet title={`Move from ${it.key}`} onClose={onClose}>
       <form onSubmit={(e) => { e.preventDefault(); void go(); }}>
-        {mine.length > 1 && (
+        {choices.length > 1 ? (
           <ul className="pick-list">
-            {mine.map((p) => <li key={refOf(p)}><label><input type="radio" checked={ref === refOf(p)} onChange={() => setRef(refOf(p))} /> <b>{short(refOf(p))}</b> {p.title}</label></li>)}
+            {choices.map((x) => <li key={x.id}><label><input type="radio" checked={pick === x.id} onChange={() => setPick(x.id)} /> <b>{x.head}</b> {x.text}</label></li>)}
           </ul>
-        )}
-        <select className="field" autoFocus value={to} onChange={(e) => setTo(e.target.value)}>
+        ) : <p><b>{choices[0].head}</b> {choices[0].text}</p>}
+        <select className="field" autoFocus aria-label="Move to" value={to} onChange={(e) => setTo(e.target.value)}>
           <option value="split">Its own work item</option>
           {targets.map((x) => <option key={x.id} value={x.id}>Into {x.key} · {x.title}</option>)}
         </select>
-        <p className="st dim" style={{ margin: "8px 0 0" }}>Kept here only; nothing changes on GitHub or in the tracker.</p>
+        <p className="st dim" style={{ margin: "8px 0 0" }}>Kept here only. Nothing changes on GitHub, in the tracker or in herdr.</p>
         <div className="row">
-          {moved && <button type="button" className="btn" onClick={() => void go(true)}>Put back</button>}
+          {c?.moved && <button type="button" className="btn" onClick={() => void go(true)}>Put back</button>}
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" type="submit">Move <kbd>⏎</kbd></button>
         </div>

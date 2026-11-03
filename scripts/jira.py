@@ -347,6 +347,20 @@ def testing_block(i, me, now):
     }
 
 
+def comment_facts(i, me):
+    """The last comment by another person (not the user, not an app), and when the user last commented."""
+    comments = comments_of(i)
+    who = lambda c: c.get("author") or {}
+    mine = [c for c in comments if who(c).get("accountId") == me]
+    others = [c for c in comments if who(c).get("accountId") != me and who(c).get("accountType") != "app"]
+    last = others[-1] if others else None
+    return {
+        "lastMyCommentAt": mine[-1]["created"] if mine else None,
+        "lastOtherComment": ({"id": last["id"], "author": name_of(last.get("author"), "displayName", None), "isMe": False,
+                              "at": last["created"], "firstLine": first_line(last.get("body"))} if last else None),
+    }
+
+
 def board(keys):
     """JSON for the control room: the keys given, the user's In Progress issues, and his product testing issues."""
     mine = 'assignee = currentUser() AND statusCategory = "In Progress"'
@@ -382,6 +396,7 @@ def board(keys):
             "parent": ({"key": f["parent"]["key"], "summary": f["parent"]["fields"]["summary"]} if f.get("parent") else None),
             "transitions": [{"id": t["id"], "name": t["name"], "to": t["to"]["name"]} for t in ts],
         }
+        row["comments"] = comment_facts(i, me)
         t = testing_block(i, me, now) if is_mine else None
         if t:
             row["testing"] = t

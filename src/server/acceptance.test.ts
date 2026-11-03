@@ -57,7 +57,7 @@ describe("acceptanceLane", () => {
     expect([l.outcome, l.lane]).toEqual(["testing", "waiting"]);
   });
   test("approved asks for a master PR, is Parked with no branch, and is finished on master", () => {
-    const j = issue({ status: "Ready for Deployment" });
+    const j = issue({ status: "Approved" });
     const l = acceptanceLane(j, [br({})], [])!;
     expect([l.lane, l.primary.label, l.primary.start]).toEqual(["mine", "PR ABC-1 to master", "ABC-1"]);
     expect(l.primary.startContext).toContain("against master");
@@ -69,16 +69,16 @@ describe("acceptanceLane", () => {
 });
 
 describe("applyJira and product testing", () => {
-  test("Testing and Ready for Deployment never say no PR yet or Start", () => {
+  test("Testing and Approved never say no PR yet or Start", () => {
     const items = applyJira([], new Map([
-      ["ABC-1", issue({})], ["ABC-2", issue({ key: "ABC-2", status: "Ready for Deployment" })],
-      ["ABC-3", issue({ key: "ABC-3", testing: undefined })], ["ABC-4", issue({ key: "ABC-4", status: "Ready for Deployment", testing: undefined })],
+      ["ABC-1", issue({})], ["ABC-2", issue({ key: "ABC-2", status: "Approved" })],
+      ["ABC-3", issue({ key: "ABC-3", testing: undefined })], ["ABC-4", issue({ key: "ABC-4", status: "Approved", testing: undefined })],
     ]));
     expect(items.map((i) => [i.key, i.lane])).toEqual([["ABC-1", "waiting"], ["ABC-2", "parked"], ["ABC-3", "waiting"], ["ABC-4", "parked"]]);
     expect(items.some((i) => i.primary.start || /no PR yet/.test(i.why))).toBe(false);
   });
   test("an approved issue on master leaves the board", () => {
-    expect(applyJira([], new Map([["ABC-2", issue({ key: "ABC-2", status: "Ready for Deployment" })]]), { branchesFor: () => [br({ name: "ABC-2", onMaster: true })] })).toEqual([]);
+    expect(applyJira([], new Map([["ABC-2", issue({ key: "ABC-2", status: "Approved" })]]), { branchesFor: () => [br({ name: "ABC-2", onMaster: true })] })).toEqual([]);
   });
   test("an In Progress issue with a branch shows the branch, not no PR yet", () => {
     const [it] = applyJira([], new Map([["ABC-5", issue({ key: "ABC-5", status: "In Progress", testing: undefined })]]), { branchesFor: () => [br({ name: "ABC-5" })] });

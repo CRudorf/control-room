@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Agent, Dependency, Issue, PrRow } from "../shared/types";
-import { applyGates, applyJira, applyRuns, branchFamily, cleanTitle, finishedToday, groupWorkItems, trackerKey, rankNext, errorKey, shutGates, sortItems, suggestFinished, suggestFor } from "./workitems";
+import { applyCommentWaits, applyGates, applyJira, applyRuns, branchFamily, cleanTitle, finishedToday, groupWorkItems, quietAgentsByKey, trackerKey, rankNext, errorKey, shutGates, sortItems, suggestFinished, suggestFor } from "./workitems";
 import { featureOf } from "./metrics";
 
 let n = 100;
@@ -351,5 +351,75 @@ describe("unattended runs", () => {
   test("while its agent works, nothing changes", () => {
     const items = groupWorkItems([pr({ title: "ABC-1: a fix" })], [agent({ label: "agent ABC-1", status: "working" })]);
     expect(applyRuns(items, new Map([["ABC-1", run]]))).toEqual(items);
+  });
+});
+
+describe("agents that name no key", () => {
+  const agent = (over: Partial<Agent> = {}): Agent => ({ pane: "p1", tab: "t1", workspace: "w", name: "cr-x-12", label: "selfreview widgets#12", title: "", workspaceLabel: "", status: "done", seq: 1, finishedSeq: 1, cwd: "/x", repo: "widgets", branch: null, upstream: null, head: null, ...over } as Agent);
+  const keyOfRef = (r: string) => (r === "widgets#12" ? "ABC-9" : null);
+  test("a tab that names a merged PR joins that PR's key", () =>
+    expect(groupWorkItems([], [agent()], undefined, undefined, undefined, undefined, undefined, { keyOfRef }).map((i) => i.key)).toEqual(["ABC-9"]));
+  test("with an unknown PR it stays with its repo", () =>
+    expect(groupWorkItems([], [agent()]).map((i) => i.key)).toEqual(["widgets"]));
+  test("the user's move beats the names, even for an idle agent", () => {
+    const moved = new Map([["cr-x-12", { id: "abc-7", key: "ABC-7", kind: "jira" as const }]]);
+    const [it] = groupWorkItems([], [agent({ status: "idle", finishedSeq: null })], undefined, undefined, undefined, undefined, undefined, { keyOfRef, agentMoves: moved });
+    expect(it.key).toBe("ABC-7");
+    expect(it.agentsMoved).toEqual(["cr-x-12"]);
+  });
+  test("moved out on its own, it gets its own item", () => {
+    const [it] = groupWorkItems([], [agent()], undefined, undefined, undefined, undefined, undefined, { keyOfRef, agentMoves: new Map([["cr-x-12", null]]) });
+    expect(it.key).toBe("cr-x-12");
+  });
+});
+
+describe("idle agents on an issue with no PR", () => {
+  const agent = (over: Partial<Agent> = {}): Agent => ({ pane: "p1", tab: "t1", workspace: "w", name: "cr-x", label: "agent ABC-9", title: "", workspaceLabel: "", status: "idle", seq: 1, finishedSeq: null, cwd: "/x", repo: "widgets", branch: null, upstream: null, head: null, ...over } as Agent);
+  const issue: Issue = { key: "ABC-9", summary: "a thing", status: "In Progress", category: "indeterminate", mine: true, updated: "2026-10-28T00:00:00Z", url: "https://x/ABC-9", transitions: [] };
+  const quiet = quietAgentsByKey([agent({ label: "agent widgets#9" })], { keyOfRef: (r) => (r === "widgets#9" ? "ABC-9" : null) });
+  test("a tab name with the key is enough", () => expect(trackerKey("agent ABC-9 cr-x", new Set(["ABC"]))).toBe("ABC-9"));
+  test("the issue's item shows its idle agent", () =>
+    expect(applyJira([], new Map([["ABC-9", issue]]), { quietAgents: (k) => quiet.get(k) ?? [] })[0].agents.map((a) => a.name)).toEqual(["cr-x"]));
+  test("an idle agent alone adds no row", () => expect(groupWorkItems([], [agent()])).toEqual([]));
+  test("a finished agent is not quiet", () => expect(quietAgentsByKey([agent({ finishedSeq: 3, label: "agent widgets#9" })], { keyOfRef: () => "ABC-9" }).size).toBe(0));
+  test("a moved agent is not quiet", () => expect(quietAgentsByKey([agent()], { agentMoves: new Map([["cr-x", null]]) }).size).toBe(0));
+});
+
+describe("wait for a comment", () => {
+  const SET = "2026-10-30T12:00:00Z";
+  const NOW = Date.parse("2026-10-31T12:00:00Z");
+  const comment = (at: string) => ({ id: "1", author: "Sam", isMe: false, at, firstLine: "Looks wrong" });
+  const issue = (comments?: Issue["comments"], over: Partial<Issue> = {}): Issue => ({ key: "ABC-1", summary: "s", status: "Code Review", category: "indeterminate", mine: true, updated: SET, url: "u", transitions: [], comments, ...over });
+  const run = (j: Issue) => applyCommentWaits([], { "ABC-1": SET }, new Map([[j.key, j]]), {}, NOW);
+
+  test("an issue with no PR stays on the board, in Waiting on others", () => {
+    const [it] = run(issue({ lastMyCommentAt: null, lastOtherComment: null }));
+    expect([it.lane, it.commentWait?.woke]).toEqual(["waiting", null]);
+  });
+  test("a comment from before the wait doesn't end it", () =>
+    expect(run(issue({ lastMyCommentAt: null, lastOtherComment: comment("2026-10-30T04:00:00-0700") }))[0].lane).toBe("waiting"));
+  test("a newer comment by someone else moves it to My turn", () => {
+    const [it] = run(issue({ lastMyCommentAt: null, lastOtherComment: comment("2026-10-30T13:00:00.000-0000") }));
+    expect([it.lane, it.why]).toEqual(["mine", "Sam commented: “Looks wrong”"]);
+  });
+  test("the user's reply puts it back", () =>
+    expect(run(issue({ lastMyCommentAt: "2026-10-30T14:00:00Z", lastOtherComment: comment("2026-10-30T13:00:00Z") }))[0].lane).toBe("waiting"));
+  test("failing Testing after the wait began moves it to My turn", () => {
+    const failed = { id: "9", by: "Pat", at: "2026-10-30T13:00:00Z", from: "Testing", to: "To Do", comment: null };
+    const testing = { enteredAt: null, failed, lastComment: null, lastMyCommentAt: null, questionSince: null };
+    const [it] = run(issue(undefined, { status: "To Do", category: "new", testing }));
+    expect([it.lane, it.why]).toEqual(["mine", "Pat moved it from Testing back to To Do"]);
+    const old = { ...testing, failed: { ...failed, at: "2026-10-30T09:00:00Z" } };
+    expect(run(issue(undefined, { status: "To Do", category: "new", testing: old }))[0].lane).toBe("waiting");
+  });
+  test("a done issue with a wait doesn't return", () =>
+    expect(run(issue(undefined, { category: "done" }))).toEqual([]));
+  test("an open PR's lane gives way, and new feedback ends the wait", () => {
+    const [base] = groupWorkItems([pr({ title: "ABC-1: x", branch: "feat/abc-1" })], []);
+    const j = issue({ lastMyCommentAt: null, lastOtherComment: null });
+    const item = { ...base, key: "ABC-1" };
+    expect(applyCommentWaits([item], { "ABC-1": SET }, new Map([[j.key, j]]), {}, NOW)[0].lane).toBe("waiting");
+    const fed = { ...item, prs: [{ ...item.prs[0], feedback: [{ who: "Kim", at: "2026-10-30T15:00:00Z", kind: "changes", body: "x" } as any] }] };
+    expect(applyCommentWaits([fed], { "ABC-1": SET }, new Map([[j.key, j]]), {}, NOW)[0].lane).toBe("mine");
   });
 });

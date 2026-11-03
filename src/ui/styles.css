@@ -60,7 +60,7 @@ a { color:inherit; }
 .ctr.on { border-color:var(--hc); box-shadow: inset 0 0 0 1px var(--hc), var(--shadow); background:color-mix(in srgb, var(--hc) 16%, var(--panel)); }
 .board.filtering .ctr:not(.on) { opacity:.55; }
 .tools { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; align-items:center; min-width:0; }
-.search { display:flex; align-items:center; gap:6px; background:var(--panel); border:1px solid var(--rule); border-radius:4px; padding:0 8px; height:34px; width:170px; }
+.search { display:flex; align-items:center; gap:6px; background:var(--panel); border:1px solid var(--rule); border-radius:4px; padding:0 8px; height:34px; flex:0 1 170px; width:170px; min-width:100px; }
 .search input { border:0; background:transparent; color:var(--ink); font:inherit; width:100%; outline:none; }
 kbd { font:600 11px 'Archivo Narrow'; border:1px solid var(--rule); border-bottom-width:2px; border-radius:3px; padding:0 4px; color:var(--ink-3); background:var(--panel); }
 .seg { display:flex; border:1px solid var(--rule); border-radius:4px; overflow:hidden; height:34px; }
@@ -70,6 +70,7 @@ kbd { font:600 11px 'Archivo Narrow'; border:1px solid var(--rule); border-botto
 .iconbtn svg { width:16px; height:16px; }
 .iconbtn.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 /* The page nav: Work, Sessions, Metrics, Docs. The menu holds the rest. */
+.navgroup { display:flex; gap:8px; align-items:center; flex:none; }
 .pages { display:flex; border:1px solid var(--rule); border-radius:4px; overflow:hidden; height:34px; }
 .pages button { border:0; border-left:1px solid var(--rule); background:var(--panel); padding:0 11px; font:600 13px 'Archivo Narrow'; color:var(--ink-2); display:inline-flex; align-items:center; gap:5px; }
 .pages button:first-child { border-left:0; }
