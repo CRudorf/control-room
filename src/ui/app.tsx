@@ -26,6 +26,9 @@ import type { Suggestion } from "../shared/types";
 import { branchLine } from "../shared/branches";
 import { Running, runningKinds } from "./running";
 import { nextSort, sortBy, type Sort, type SortCol } from "./sort";
+import { Settings, type Theme } from "./settings";
+import { applySkin, skinOf, type SkinId } from "./skins";
+import { Minimap } from "./minimap";
 
 const LANES: { k: Lane; t: string; hc: string; sc: string }[] = [
   { k: "mine", t: "My turn", hc: "--h-mine", sc: "--s-mine" },
@@ -56,11 +59,10 @@ function store(k: string, v: unknown) {
   try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
 }
 
-type Theme = "system" | "light" | "dark";
 type SheetKind = "park" | "remove" | "dependency" | "move" | "ask" | "effort";
 type Group = { key: string; title: string; lane?: Lane; collapsed?: boolean; items: (WorkItem & { _group?: string; _also?: string[] })[] };
 
-type Page = "work" | "sessions" | "finished" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup";
+type Page = "work" | "sessions" | "finished" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup" | "settings";
 /** The pages in the nav strip. */
 const NAV: { p: Page; label: string; k: string; title: string }[] = [
   { p: "work", label: "Work", k: "esc", title: "Your work items" },
@@ -75,8 +77,9 @@ const MORE: { p: Page; label: string; k: string; title: string }[] = [
   { p: "cleanup", label: "Cleanup", k: "u", title: "Worktrees and runs that work left behind" },
   { p: "history", label: "History", k: "h", title: "Everything the control room did" },
   { p: "removed", label: "Removed", k: "e", title: "The editable remove list" },
+  { p: "settings", label: "Settings", k: ",", title: "Skin and theme" },
 ];
-const PAGE_KEYS: Record<string, Page> = { v: "finished", c: "sessions", i: "metrics", d: "docs", t: "tidy", h: "history", e: "removed", u: "cleanup" };
+const PAGE_KEYS: Record<string, Page> = { v: "finished", c: "sessions", i: "metrics", d: "docs", t: "tidy", h: "history", e: "removed", u: "cleanup", ",": "settings" };
 
 export function App() {
   const { snap, status, refresh } = useFeed();
@@ -131,6 +134,7 @@ export function App() {
     else { runPrimary(it); done?.(); }
   }, []);
   const [theme, setTheme] = useState<Theme>(() => stored("cr-theme", "system"));
+  const [skin, setSkin] = useState<SkinId>(() => skinOf(stored("cr-skin", "default")).id);
   const [seen, setSeen] = useState<Record<string, string> | null>(() => stored("cr-seen", null));
   const qRef = useRef<HTMLInputElement>(null);
 
@@ -139,6 +143,7 @@ export function App() {
     else document.documentElement.setAttribute("data-theme", theme);
     store("cr-theme", theme);
   }, [theme]);
+  useEffect(() => { applySkin(skin); store("cr-skin", skin); }, [skin]);
   useEffect(() => store("cr-group", groupBy), [groupBy]);
 
   // First run: everything already on the board counts as seen.
@@ -270,7 +275,7 @@ export function App() {
         if (took) { e.preventDefault(); return; }
       }
       // Tidy, History, Removed and Metrics: their keys switch between them or back to the board; they handle esc.
-      if (tidy || hist || rem || met || ses || page === "cleanup") {
+      if (tidy || hist || rem || met || ses || page === "cleanup" || page === "settings") {
         const p = PAGE_KEYS[e.key];
         if (p) go(p);
         return;
@@ -305,6 +310,7 @@ export function App() {
       else if (k === "r") refresh();
       else if (k === "t") open("tidy");
       else if (k === "u") open("cleanup");
+      else if (k === ",") open("settings");
       else if (k === "h") open("history");
       else if (k === "i") open("metrics");
       else if (k === "v") open("finished");
@@ -323,7 +329,7 @@ export function App() {
   return (
     <MotionConfig reducedMotion="user">
       <div className="app">
-        <header className="top">
+        <header className={`top ${skinOf(skin).minimap ? "with-map" : ""}`}>
           <div className="brand-col"><div className="brand"><Brand />Control room{snap?.project ? <span className="brand-project">{snap.project}</span> : null}</div><button className="iconbtn newwork" onClick={() => setStartBox({ text: "" })} title="Start new work: a task in your words, or a Jira, Sentry or PostHog link (s)">+ New work <kbd>s</kbd></button></div>
           <div className={`board ${laneFilter.size ? "filtering" : ""}`}>
             {LANES.map((l) => (
@@ -364,13 +370,13 @@ export function App() {
                   ))}
                   <hr />
                   <button role="menuitem" className={focus ? "on" : ""} onClick={() => { setFocus((x) => !x); setMenu(false); }}><span>Focus mode</span><kbd>f</kbd></button>
-                  <button role="menuitem" onClick={() => setTheme((t) => ({ system: "light", light: "dark", dark: "system" } as const)[t])}><span>Theme: {theme}</span><ThemeIcon /></button>
                   <button role="menuitem" onClick={() => { setHelp(true); setMenu(false); }}><span>Keyboard shortcuts</span><kbd>?</kbd></button>
                 </div>
               </>}
             </div>
             </div>
           </div>
+          {skinOf(skin).minimap && <Minimap items={items} sel={sel} onPick={select} />}
         </header>
         {status === "signed-out" ? (
           <div className="notice"><p>This browser isn't signed in to the control room.</p><p>Run <code>bun run open</code> in the control-room checkout.</p></div>
@@ -378,6 +384,8 @@ export function App() {
           <Docs onClose={back} />
         ) : page === "cleanup" ? (
           <Cleanup onClose={back} />
+        ) : page === "settings" ? (
+          <Settings theme={theme} setTheme={setTheme} skin={skin} setSkin={setSkin} onClose={back} />
         ) : tidy ? (
           <Tidy onClose={back} />
         ) : hist ? (
@@ -496,7 +504,7 @@ const KEYS: [string, string][] = [
   ["p", "park the selected item (again to unpark)"], ["x", "remove the selected item's PRs"], ["b", "dependency a PR on another PR or a step"], ["l", "move a PR into another item, or out"], ["o", "take over someone else's PR (review requests)"], ["e", "Removed: the remove list"],
   ["/", "filter by text"], ["g", "group by lane, repo or effort"], ["y", "put the selected item in an effort"], ["f", "focus mode"], ["z", "expand a pane to the whole work area (again, or esc, for the default view)"],
   ["a", "start an agent on the selected item"], ["m", "mark the selected item's feedback addressed"], ["w", "wait on the author (review requests)"], ["⌘⏎", "start it, from the agent sheet"],
-  ["t", "Tidy herdr tabs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], ["r", "refresh from GitHub now"],
+  ["t", "Tidy herdr tabs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: skin and theme"], ["r", "refresh from GitHub now"],
   ["?", "this list"], ["esc", "back / clear filters"],
 ];
 
@@ -976,5 +984,4 @@ function PrTable({ it }: { it: WorkItem }) {
 const Brand = () => (
   <svg viewBox="0 0 22 22"><rect x="2" y="4" width="18" height="4" rx="1" fill="var(--h-mine)" /><rect x="5" y="9.5" width="15" height="4" rx="1" fill="var(--h-wait)" /><rect x="2" y="15" width="18" height="4" rx="1" fill="var(--h-ask)" /></svg>
 );
-const ThemeIcon = () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="8" cy="8" r="5.5" /><path d="M8 2.5v11" /><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" /></svg>;
 const SearchIcon = () => <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5 14 14" /></svg>;
