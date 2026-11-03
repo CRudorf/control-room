@@ -137,6 +137,15 @@ async function main() {
           await b.key("Escape");
           await Bun.sleep(300);
         }
+        // The world, under the skin that offers it.
+        await b.evaluate(`localStorage.setItem("cr-skin", JSON.stringify("osrs")); location.reload()`);
+        await Bun.sleep(3500);
+        await b.evaluate(`document.querySelector(".menu-wrap > button").click(); setTimeout(() => [...document.querySelectorAll(".menu button")].find((x) => x.textContent.startsWith("World"))?.click(), 200)`);
+        await Bun.sleep(3000);
+        if (!(await b.evaluate(`!!document.querySelector(".world .world-view")`))) failures.push(`${w}px World: it didn't open`);
+        await look("World");
+        await b.evaluate(`localStorage.setItem("cr-skin", JSON.stringify("default")); location.reload()`);
+        await Bun.sleep(3000);
         await visuals();
       } finally {
         b.close();

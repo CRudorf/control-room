@@ -109,7 +109,19 @@ export type Agent = {
   finishedSeq: number | null;
   /** When it took its current status; null when the control room first saw it already in it. */
   since?: string | null;
+  /** What it's for (tasks.ts), and how that's known. */
+  task?: AgentTask;
+  taskFrom?: "start" | "skill" | "label";
+  /** Its job is done (spent.ts): why, what it left, and when the control room closes it (null: the user does). */
+  spent?: { reason: string; output: string | null; since: string; closesAt: string | null };
 };
+
+/**
+ * What an agent is for. build: making a change; fix: answering feedback, CI or conflicts; selfreview: reviewing
+ * the user's own PR; review: reviewing someone else's; verify: testing a change in a browser; chart: charting
+ * a change; improve: the self-improvement loop, lessons, architecture and retro work; grill: grilling a plan.
+ */
+export type AgentTask = "build" | "fix" | "selfreview" | "review" | "verify" | "chart" | "improve" | "grill";
 
 /** Waiting on author: a review request handed back until its author acts. */
 export type Hold = { ref: string; setAt: string; head: string; since: string; note: string };

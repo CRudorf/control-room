@@ -12,6 +12,7 @@ import { db } from "./db";
 import { note } from "./runner";
 import { herdrState, request } from "./herdr";
 import { draftsFile, openFindings, readDrafts, reviewPrompt } from "./review";
+import { finishLine, rememberTask, taskForStart } from "./tasks";
 
 const short = (repo: string) => repo.split("/").pop()!;
 const slug = (s: string, n = 20) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, n).replace(/-$/, "");
@@ -113,7 +114,10 @@ export function planStart(req: Pick<StartRequest, "item" | "pr" | "kind" | "verb
 /** Ends a prompt with how to look the work item up. A slash command takes the whole prompt as its arguments, so it goes without. */
 export function withLookup(prompt: string, item: string) {
   const line = `\`bun run --cwd "${ROOT}" item ${item}\` shows this work item's PRs, open feedback, failing checks and lessons.`;
-  return prompt.startsWith("/") || prompt.includes(line) ? prompt : prompt.trim() ? `${prompt}\n\n${line}` : line;
+  // The user works across many sessions at once: every summary has to say what this one is on.
+  const name = "When you sum up or finish a turn, name the work item (its key and what it's for) and each PR by repo, number and title, then what changed. Never a bare PR number.";
+  if (prompt.startsWith("/") || prompt.includes(line)) return prompt;
+  return prompt.trim() ? `${prompt}\n\n${line}\n${name}` : `${line}\n${name}`;
 }
 
 const labelFor = (req: StartRequest, repo: string) => {
@@ -146,6 +150,7 @@ async function reuseAgent(req: StartRequest, reuse: { pane: string; fresh: boole
   }
   await request("agent.prompt", { target: a.pane, text: req.prompt });
   await request("tab.rename", { tab_id: a.tab, label }).catch(() => {});
+  rememberTask(reuse.pane, taskForStart(req));
   note({ item: req.item, trigger: req.kind }, "start-agent", label, reuse.fresh ? "started in a cleared session" : "started in the same session", { detail: detail });
   return { name, label, pane: a.pane, reused: true, fresh: reuse.fresh };
 }
@@ -153,6 +158,8 @@ async function reuseAgent(req: StartRequest, reuse: { pane: string; fresh: boole
 /** Opens the tab, starts Claude and sends the prompt, or hands it to an open session. Returns the agent's name. */
 export async function startAgent(req: StartRequest) {
   if (!req.bare) req = { ...req, prompt: withLookup(req.prompt, req.item) };
+  // Every session knows when it's done and says so, so the control room can close it then.
+  if (req.prompt.trim() && !req.prompt.startsWith("/")) req = { ...req, prompt: `${req.prompt.trim()}\n\n${finishLine(taskForStart(req))}` };
   assertInProject(req.repo);
   if (req.reuse) return reuseAgent(req, req.reuse);
   const plan = planStart(req, herdrState().agents);
@@ -179,6 +186,7 @@ export async function startAgent(req: StartRequest) {
   const tab = await request("tab.create", { workspace_id: workspace, cwd, label, focus: false });
   const pane = tab.root_pane?.pane_id ?? tab.pane?.pane_id;
   if (!pane) throw new Error("herdr didn't return the new tab's pane");
+  rememberTask(pane, taskForStart(req));
   // The shell has to be at its prompt before agent.start.
   await request("pane.wait_for_output", { pane_id: pane, source: "recent", match: { type: "regex", value: "(?m)[%$#❯>] ?$" }, timeout_ms: 15_000 }, 20_000).catch(() => {});
   const envLine = agentEnvLine(agentEnv());

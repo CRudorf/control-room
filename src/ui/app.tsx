@@ -1,6 +1,6 @@
 import { AnimatePresence, LayoutGroup, motion, MotionConfig } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Agent, Cell, HandoffTask, Lane, LoopView, PrRow, Snapshot, Suggested, WorkItem } from "../shared/types";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Agent, AgentTask, Cell, HandoffTask, Lane, LoopView, PrRow, Snapshot, Suggested, WorkItem } from "../shared/types";
 import { useFeed } from "./feed";
 import { act, Confirm, PrActions, RerequestSheet, Threads, toast } from "./actions";
 import { ChartButton, useVisuals, VisualStrip } from "./visuals";
@@ -29,6 +29,9 @@ import { nextSort, sortBy, type Sort, type SortCol } from "./sort";
 import { Settings, type Theme } from "./settings";
 import { applySkin, skinOf, type SkinId } from "./skins";
 import { Minimap } from "./minimap";
+import { useXp } from "./world/xp";
+// The world loads only when opened, so the board never carries Three.js.
+const World = lazy(() => import("./world/world"));
 
 const LANES: { k: Lane; t: string; hc: string; sc: string }[] = [
   { k: "mine", t: "My turn", hc: "--h-mine", sc: "--s-mine" },
@@ -62,7 +65,7 @@ function store(k: string, v: unknown) {
 type SheetKind = "park" | "remove" | "dependency" | "move" | "ask" | "effort";
 type Group = { key: string; title: string; lane?: Lane; collapsed?: boolean; items: (WorkItem & { _group?: string; _also?: string[] })[] };
 
-type Page = "work" | "sessions" | "finished" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup" | "settings";
+type Page = "work" | "sessions" | "finished" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup" | "settings" | "world";
 /** The pages in the nav strip. */
 const NAV: { p: Page; label: string; k: string; title: string }[] = [
   { p: "work", label: "Work", k: "esc", title: "Your work items" },
@@ -77,6 +80,7 @@ const MORE: { p: Page; label: string; k: string; title: string }[] = [
   { p: "cleanup", label: "Cleanup", k: "u", title: "Worktrees and runs that work left behind" },
   { p: "history", label: "History", k: "h", title: "Everything the control room did" },
   { p: "removed", label: "Removed", k: "e", title: "The editable remove list" },
+  { p: "world", label: "World", k: "w", title: "Walk round a town of your work" },
   { p: "settings", label: "Settings", k: ",", title: "Skin and theme" },
 ];
 const PAGE_KEYS: Record<string, Page> = { v: "finished", c: "sessions", i: "metrics", d: "docs", t: "tidy", h: "history", e: "removed", u: "cleanup", ",": "settings" };
@@ -144,6 +148,7 @@ export function App() {
     store("cr-theme", theme);
   }, [theme]);
   useEffect(() => { applySkin(skin); store("cr-skin", skin); }, [skin]);
+  useXp(snap, skinOf(skin).world);
   useEffect(() => store("cr-group", groupBy), [groupBy]);
 
   // First run: everything already on the board counts as seen.
@@ -275,8 +280,9 @@ export function App() {
         if (took) { e.preventDefault(); return; }
       }
       // Tidy, History, Removed and Metrics: their keys switch between them or back to the board; they handle esc.
-      if (tidy || hist || rem || met || ses || page === "cleanup" || page === "settings") {
-        const p = PAGE_KEYS[e.key];
+      if (tidy || hist || rem || met || ses || page === "cleanup" || page === "settings" || page === "world") {
+        // Under a skin with the World, w opens it and closes it again.
+        const p = PAGE_KEYS[e.key] ?? (e.key === "w" && skinOf(skin).world ? "world" : undefined);
         if (p) go(p);
         return;
       }
@@ -291,6 +297,7 @@ export function App() {
         if (!ps.length) setToast("Nothing to mark addressed");
         for (const p of ps) void act(selected, `${p.repo}#${p.number}`, "mark", {}, "key m");
       }
+      else if (k === "w" && skinOf(skin).world) open("world");
       else if (k === "w" && selected?.keyKind === "review") document.getElementById("hold-note")?.focus();
       else if (k === "f") setFocus((x) => !x);
       else if (k === "g") setGroupBy((g) => (g === "lane" ? "repo" : g === "repo" ? "effort" : "lane"));
@@ -324,7 +331,7 @@ export function App() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [order, sel, selected, select, refresh, tidy, hist, rem, met, ses, doc, wide, help, starting, rerequesting, sheet, startBox, jiraMove, batchOpen, batch, reviewing, doPrimary, nextMode, cur, curItem, curNudge, nextIds, skip, sendNudge]);
+  }, [order, sel, selected, select, refresh, tidy, hist, rem, met, ses, doc, wide, help, starting, rerequesting, sheet, startBox, jiraMove, batchOpen, batch, reviewing, doPrimary, nextMode, cur, curItem, curNudge, nextIds, skip, sendNudge, skin, page]);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -365,7 +372,7 @@ export function App() {
               {menu && <>
                 <div className="menu-scrim" onClick={() => setMenu(false)} />
                 <div className="menu" role="menu" onKeyDown={(e) => e.key === "Escape" && setMenu(false)}>
-                  {MORE.map((m) => (
+                  {MORE.filter((m) => m.p !== "world" || skinOf(skin).world).map((m) => (
                     <button key={m.p} role="menuitem" className={page === m.p ? "on" : ""} onClick={() => open(m.p)}><span>{m.label}<small>{m.title}</small></span><kbd>{m.k}</kbd></button>
                   ))}
                   <hr />
@@ -376,7 +383,7 @@ export function App() {
             </div>
             </div>
           </div>
-          {skinOf(skin).minimap && <Minimap items={items} sel={sel} onPick={select} />}
+          {skinOf(skin).minimap && page !== "world" && <Minimap items={items} sel={sel} onPick={select} />}
         </header>
         {status === "signed-out" ? (
           <div className="notice"><p>This browser isn't signed in to the control room.</p><p>Run <code>bun run open</code> in the control-room checkout.</p></div>
@@ -384,6 +391,11 @@ export function App() {
           <Docs onClose={back} />
         ) : page === "cleanup" ? (
           <Cleanup onClose={back} />
+        ) : page === "world" && skinOf(skin).world && snap ? (
+          <Suspense fallback={<div className="notice"><p>Loading the world…</p></div>}>
+            <World items={items} onClose={back} onOpen={(id) => { back(); select(id); }} onPrimary={doPrimary} onSheet={(kind, it) => setSheet({ kind, it })}
+              onBuilding={(b) => { if (b === "next") { back(); setNextMode(true); setCur(null); } else open(b); }} />
+          </Suspense>
         ) : page === "settings" ? (
           <Settings theme={theme} setTheme={setTheme} skin={skin} setSkin={setSkin} onClose={back} />
         ) : tidy ? (
@@ -504,7 +516,7 @@ const KEYS: [string, string][] = [
   ["p", "park the selected item (again to unpark)"], ["x", "remove the selected item's PRs"], ["b", "dependency a PR on another PR or a step"], ["l", "move a PR into another item, or out"], ["o", "take over someone else's PR (review requests)"], ["e", "Removed: the remove list"],
   ["/", "filter by text"], ["g", "group by lane, repo or effort"], ["y", "put the selected item in an effort"], ["f", "focus mode"], ["z", "expand a pane to the whole work area (again, or esc, for the default view)"],
   ["a", "start an agent on the selected item"], ["m", "mark the selected item's feedback addressed"], ["w", "wait on the author (review requests)"], ["⌘⏎", "start it, from the agent sheet"],
-  ["t", "Tidy herdr tabs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: skin and theme"], ["r", "refresh from GitHub now"],
+  ["t", "Tidy herdr tabs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: skin and theme"], ["w", "World, under the Old School RS skin"], ["r", "refresh from GitHub now"],
   ["?", "this list"], ["esc", "back / clear filters"],
 ];
 
@@ -841,6 +853,9 @@ const post = (path: string, body: object) =>
   fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
     .then((x) => x.json()).catch(() => ({ error: "server unreachable" }));
 
+const TASK_TEXT: Record<AgentTask, string> = { build: "building", fix: "fixing", selfreview: "self-review", review: "reviewing", verify: "verifying", chart: "charting", improve: "improving", grill: "grilling a plan" };
+const TASK_FROM = { start: "What the control room started it for", skill: "From the last skill it ran", label: "A guess from its tab label" };
+
 function AgentPane({ agents, item, expand }: { agents: Agent[]; item: WorkItem; expand?: React.ReactNode }) {
   const [closing, setClosing] = useState(false);
   const [pane, setPane] = useState(agents[0].pane);
@@ -858,7 +873,17 @@ function AgentPane({ agents, item, expand }: { agents: Agent[]; item: WorkItem; 
             </button>
           ))}</div>
         )}
-        <div className="meta">{a.workspaceLabel} · {a.label}{a.branch ? ` · ${a.branch}` : ""}</div>
+        <div className="meta">{a.workspaceLabel} · {a.label}{a.branch ? ` · ${a.branch}` : ""}{a.task && <> · <span title={TASK_FROM[a.taskFrom ?? "label"]}>{TASK_TEXT[a.task]}</span></>}</div>
+        {a.spent && (
+          <div className="spent">
+            <b>Spent:</b> {a.spent.reason}{a.spent.output ? <> · <span className="mono">{a.spent.output}</span></> : null}
+            {a.spent.closesAt ? ` · closes itself at ${new Date(a.spent.closesAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
+            <span className="acts">
+              <button className="btn sm" onClick={async () => { const r = await post("/api/agent/close", { pane: a.pane, item: item.id }); setNote(r.error ? `Couldn't close: ${r.error}` : `Closed its ${r.closed}`); }}>Close now</button>
+              <button className="btn sm" title="Leave it open; the control room won't close it" onClick={async () => { const r = await post("/api/agent/keep", { pane: a.pane }); setNote(r.error ? `Couldn't: ${r.error}` : "Kept open"); }}>Keep</button>
+            </span>
+          </div>
+        )}
         <LiveConsole pane={a.pane} status={a.status} name={a.name ?? a.label} item={item.id} extra={(send) =>
           (a.status === "done" || a.status === "idle" || a.finishedSeq !== null) && (
             <button className="btn" type="button" title="Go ahead with what you drafted: push and post" onClick={() => send("Approved. Go ahead: push and post as drafted.")}>Approve</button>

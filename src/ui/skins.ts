@@ -12,6 +12,8 @@ export type Skin = {
   themed: boolean;
   /** Shows the minimap in the header. */
   minimap: boolean;
+  /** Offers the World page: the board as a town. */
+  world: boolean;
   /** Stylesheets to load the first time the skin is on, such as web fonts. */
   fonts: string[];
   /** Colours for the swatch on the Settings page. */
@@ -19,8 +21,8 @@ export type Skin = {
 };
 
 export const SKINS: Skin[] = [
-  { id: "default", name: "Default", blurb: "Flight strips on a rack, light or dark.", themed: true, minimap: false, fonts: [], swatch: ["#dbe2ea", "#f2dcab", "#b6e0d7", "#f6c3b4"] },
-  { id: "osrs", name: "Old School RS", blurb: "Stone, parchment and a minimap, after the 2007 game client.", themed: false, minimap: true,
+  { id: "default", name: "Default", blurb: "Flight strips on a rack, light or dark.", themed: true, minimap: false, world: false, fonts: [], swatch: ["#dbe2ea", "#f2dcab", "#b6e0d7", "#f6c3b4"] },
+  { id: "osrs", name: "Old School RS", blurb: "Stone, parchment and a minimap, after the 2007 game client.", themed: false, minimap: true, world: true,
     fonts: ["https://fonts.googleapis.com/css2?family=Pixelify+Sans&display=swap"], swatch: ["#4b4032", "#d3c4a0", "#ffff00", "#ff981f"] },
 ];
 

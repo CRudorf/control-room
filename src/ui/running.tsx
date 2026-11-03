@@ -2,13 +2,14 @@
 // run, and a scan bar per run along the bottom edge. One color per kind, so a glance says which.
 import type { WorkItem } from "../shared/types";
 
-export type RunKind = "ci" | "agent" | "loop" | "tests";
-export const RUN_LABEL: Record<RunKind, string> = { ci: "CI running", agent: "agent working", loop: "loop round", tests: "local tests" };
+export type RunKind = "ci" | "queue" | "agent" | "loop" | "tests";
+export const RUN_LABEL: Record<RunKind, string> = { ci: "CI running", queue: "in merge queue", agent: "agent working", loop: "loop round", tests: "local tests" };
 
-/** The runs on an item now, in a fixed order: CI, agents, the review loop, Stop checks. */
+/** The runs on an item now, in a fixed order: CI, the merge queue, agents, the review loop, Stop checks. */
 export function runningKinds(it: Pick<WorkItem, "prs" | "agents" | "loop" | "stopChecks">): RunKind[] {
   const k: RunKind[] = [];
   if (it.prs.some((p) => p.checks === "pending")) k.push("ci");
+  if (it.prs.some((p) => p.merge_queue && p.merge_queue.state !== "UNMERGEABLE")) k.push("queue");
   if (it.agents.some((a) => a.status === "working")) k.push("agent");
   if (it.loop?.some((l) => l.state === "running")) k.push("loop");
   if (it.stopChecks?.some((c) => c.running)) k.push("tests");

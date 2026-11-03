@@ -26,6 +26,12 @@ import { featureOf } from "./metrics";
 import { staleNudges } from "./nudges";
 import { recordPlaces } from "./events";
 import { tellsFor } from "./tellagents";
+import { closeHandedReviewers } from "./handover";
+import { spentOfPane, sweepSpent } from "./spentsweep";
+
+const withSpent = (it: WorkItem): WorkItem => ({
+  ...it, agents: it.agents.map((a) => { const sp = spentOfPane(a.pane); return sp ? { ...a, spent: { reason: sp.reason, output: sp.output, since: sp.since, closesAt: sp.closesAt } } : a; }),
+});
 import { cycle, loopsNow } from "./reviewloop";
 import { applyLoop, owned, running, views } from "./cycle";
 import { applyGuides, startGuides } from "./guides";
@@ -342,7 +348,7 @@ export function snapshot(): Snapshot {
   const items = sortItems(rankNext(applyGuides(applyParks(waited, parks()))))
     .map((it) => {
       const u = usageFor(it), a = artifactsFor(it), e = ef.get(it.key), c = checksFor(it.prs);
-      return { ...withTasks(it), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
+      return { ...withTasks(withSpent(it)), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
     });
   settleRuleParks(issues, new Set(items.map((it) => it.key)));
   const today = db.query<FinishedRow, [string]>("SELECT * FROM finished WHERE at >= ? ORDER BY at").all(midnight());
@@ -392,6 +398,8 @@ export function publish() {
     announce(s.items);
     recordPlaces(s.items);
     tellAgents(s.items);
+    closeHandedReviewers(s.items);
+    sweepSpent(s, publish);
     noteSessions(s.items);
     recordBounces(jiraIssues().values(), branchesFor, mergedPrs);
     void cycle(s.items, !!s.machine?.low, publish);

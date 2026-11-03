@@ -168,6 +168,9 @@ main.rackview.focus { grid-template-columns: 54px 1fr; }
 .pane > .in.agent { display:flex; flex-direction:column; gap:8px; flex:1; min-height:0; overflow-y:auto; }
 .console { background:#0a111c; color:#d8dde2; border-radius:3px; padding:10px 12px; font:12px/1.45 ui-monospace, Menlo, monospace; white-space:pre-wrap; overflow-wrap:anywhere; flex:1; min-height:120px; overflow:auto; }
 .meta { font:600 12px 'Archivo Narrow'; color:var(--ink-3); }
+.spent { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:6px 8px; border:1px solid var(--warn); border-radius:3px; font:600 12px "Archivo Narrow"; color:var(--ink-2); }
+.spent b { color:var(--warn); }
+.spent .acts { margin-left:auto; display:flex; gap:6px; }
 .row-acts { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
 .chips { display:flex; gap:6px; flex-wrap:wrap; }
 .chip { display:inline-flex; align-items:center; gap:6px; height:26px; padding:0 9px; border:1px solid var(--rule); border-radius:13px; background:var(--panel); font:600 12.5px 'Archivo Narrow'; color:var(--ink-2); }
@@ -680,7 +683,7 @@ button.mtile.drillable:hover { border-color:var(--rule); }
 .vpreview { max-height:40vh; overflow:auto; white-space:pre-wrap; font-size:12px; background:var(--panel-2); padding:8px; border-radius:4px; }
 
 /* Running work on a strip (running.tsx): one color per kind. Reduced motion holds the stripes and bars still. */
-.k-ci { --run:#1f6fe0; } .k-agent { --run:#7a3fe0; } .k-loop { --run:#0d8a8a; } .k-tests { --run:#c77800; }
+.k-ci { --run:#1f6fe0; } .k-queue { --run:#2f8a46; } .k-agent { --run:#7a3fe0; } .k-loop { --run:#0d8a8a; } .k-tests { --run:#c77800; }
 .strip > .run-sheen, .strip > .run-pill, .strip > .run-scan { position:absolute; padding:0; border:0; pointer-events:none; }
 .run-sheen { inset:0; border-radius:2px; box-shadow:inset 0 0 0 2px var(--run); background:repeating-linear-gradient(-45deg, color-mix(in srgb, var(--run) 16%, transparent) 0 10px, transparent 10px 20px); background-size:28.28px 28.28px; animation:run-sheen .9s linear infinite; }
 @keyframes run-sheen { to { background-position:28.28px 0; } }

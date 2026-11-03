@@ -7,6 +7,7 @@ import { basename, dirname, join } from "node:path";
 import type { Agent, AgentStatus } from "../shared/types";
 import { DEV } from "./config";
 import { db, load, save } from "./db";
+import { forgetTasks, taskOf } from "./tasks";
 import { note } from "./runner";
 
 const SOCKET = process.env.HERDR_SOCKET_PATH ?? join(homedir(), ".config/herdr/herdr.sock");
@@ -113,9 +114,11 @@ async function snapshot() {
         finishedSeq: dismissed.get(a.pane_id) === seq ? null : finishedAt.get(a.pane_id) ?? null,
         since: since.get(a.pane_id)!.at,
       });
+      Object.assign(next[next.length - 1], taskOf(next[next.length - 1]));
     }
     // Panes that are gone drop out; the rest are kept for the next restart.
     for (const p of [...since.keys()]) if (!next.some((a) => a.pane === p)) since.delete(p);
+    forgetTasks(new Set(next.map((a) => a.pane)));
     const kept = JSON.stringify(Object.fromEntries(since));
     if (kept !== sinceSaved) { save("agent_since", JSON.parse(kept)); sinceSaved = kept; }
     const changed = JSON.stringify(next) !== JSON.stringify(agents);

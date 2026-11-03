@@ -10,6 +10,9 @@ export const feedbackKey = (f: Feedback) => `${f.url}@${f.at}`;
 // People's feedback of any kind, and review bots' threads and findings; bots' top-level comments are summaries.
 const counts = (f: Feedback) => !f.bot || f.kind === "thread" || f.kind === "review";
 
+/** The line that tells a PR's owner about a self-review: how the hand-over is found again in its transcript. */
+export const selfReviewLine = (d: ReviewDrafts) => `my self-review of ${d.pr} at ${d.sha.slice(0, 7)}`;
+
 /** A self-review's findings on one commit: told once. */
 export const selfReviewKey = (d: ReviewDrafts) => `self-review ${d.pr}@${d.sha}`;
 
@@ -19,7 +22,7 @@ const HELPER = /^(chart|verify|selfreview|review|check|fix)\b/;
 const KIND: Record<Feedback["kind"], string> = { thread: "commented", changes: "requested changes", review: "reviewed", comment: "replied" };
 
 /** The agent that owns a PR: one on its branch, else the work item's only agent. Never a helper, or one blocked on the user. */
-function ownerOf(p: PrRow, all: Agent[]): Agent | null {
+export function ownerOf(p: PrRow, all: Agent[]): Agent | null {
   const agents = all.filter((a) => !HELPER.test(a.label));
   const on = agents.find((a) => a.branch === p.branch || a.upstream === p.branch) ?? (agents.length === 1 ? agents[0] : null);
   return on && on.status !== "blocked" ? on : null;
@@ -55,7 +58,7 @@ export function tellsFor(items: WorkItem[], told: Set<string> | null, skip: Set<
       if (self) {
         const open = self.findings.filter((f) => !f.dismissed);
         t.keys.push(selfReviewKey(self));
-        t.lines.push(`- my self-review of ${prRef(p)} at ${self.sha.slice(0, 7)} found ${open.length}:`,
+        t.lines.push(`- ${selfReviewLine(self)} found ${open.length}:`,
           ...open.map((f) => `  - ${f.rank}: ${f.title} (${f.path}:${f.line}). ${f.body}`));
       }
       by.set(a.pane, t);

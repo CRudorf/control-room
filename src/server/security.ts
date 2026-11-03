@@ -6,7 +6,9 @@ import { PORT, TOKEN_PATH } from "./config";
 export const HOSTNAME = "127.0.0.1";
 const HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 const ORIGINS = new Set([...HOSTS].map((h) => `http://${h}`));
-const COOKIE = "cr";
+// Cookies don't keep to a port, so each server signs in under its own name: the dev server's sign-in
+// can't overwrite the running one's. The plain name still works, for older sign-ins and the CLIs.
+const COOKIE = `cr-${PORT}`, LEGACY = "cr";
 
 export function token(): string {
   if (!existsSync(TOKEN_PATH)) {
@@ -18,13 +20,14 @@ export function token(): string {
 
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
-function cookie(req: Request): string | null {
-  const raw = req.headers.get("cookie") ?? "";
-  for (const part of raw.split(";")) {
+/** The sign-in cookies a request carries: this server's, then the plain one. */
+function cookies(req: Request): string[] {
+  const out: string[] = [];
+  for (const part of (req.headers.get("cookie") ?? "").split(";")) {
     const [k, ...v] = part.trim().split("=");
-    if (k === COOKIE) return v.join("=");
+    if (k === COOKIE) out.unshift(v.join("=")); else if (k === LEGACY) out.push(v.join("="));
   }
-  return null;
+  return out;
 }
 
 /** Null when the request may proceed; otherwise the response to send instead. */
@@ -33,8 +36,7 @@ export function guard(req: Request, opts: { needCookie: boolean }): Response | n
   const origin = req.headers.get("origin");
   if (origin && !ORIGINS.has(origin)) return new Response("bad origin", { status: 403 });
   if (opts.needCookie) {
-    const c = cookie(req);
-    if (!c || !same(c, token()))
+    if (!cookies(req).some((c) => same(c, token())))
       return new Response("Not signed in. Run `bun run open` in the control-room checkout.", { status: 401 });
   }
   return null;

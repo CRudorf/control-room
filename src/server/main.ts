@@ -1,4 +1,3 @@
-import index from "../ui/index.html";
 import { note as recordNote } from "./runner";
 import { join } from "node:path";
 import { DEV, PORT, ROOT } from "./config";
@@ -6,7 +5,8 @@ import { finishedSince, adopt, copyAsk, moveJira, nudge, publish, setEffort, ref
 import { startFeedbackTask } from "./feedbacktask";
 import type { Move } from "../shared/types";
 import { markAddressed, postReplies, rerequest, rerunCi, resolveThreads, updateBranch, type Reply } from "./actions";
-import { closeAgent, dismissAgent, focusAgent, herdrReady, readAgent, sendKeys, sendToAgent, typeInto, type Typed } from "./herdr";
+import { keepAgent } from "./spentsweep";
+import { closeAgent, dismissAgent, focusAgent, herdrReady, herdrState, readAgent, sendKeys, sendToAgent, typeInto, type Typed } from "./herdr";
 import { db } from "./db";
 import { sessions } from "./sessions";
 import { qualityRecords, setVerdict, shipped, startShipped, verifyPrompt } from "./shipped";
@@ -39,6 +39,8 @@ import { guidePage, linkGuide, promoteGuide } from "./guides";
 import type { HeldReply } from "../shared/types";
 import { archAgentPrompt, dismissSuggestion, judgeSuggestions, pickupSuggestion, type PickupSteps, runArchitecture, startSuggestions, suggestionsView, syncSuggestions } from "./suggestions";
 import { docsView, reviewDoc } from "./docs";
+import { pageRoutes } from "./page";
+import { agentTurn, withTitles } from "./turns";
 import { addFlowChange, chartChange, chartRun, flowChangePreview, getVisual, listVisuals, visualFile } from "./visuals";
 
 const archStart = (repo: string, prompt: string) => startAgent({ item: `arch-${repo}`, repo, pr: null, kind: "custom", prompt, edited: false, bare: true });
@@ -76,8 +78,7 @@ const server = Bun.serve({
   idleTimeout: 60,
   development: DEV ? { hmr: true, console: true } : false,
   routes: {
-    "/": index,
-    "/item/*": index,
+    ...(await pageRoutes()),
     "/manifest.webmanifest": pub("manifest.webmanifest", "application/manifest+json"),
     "/icon.svg": pub("icon.svg", "image/svg+xml"),
     "/sw.js": pub("sw.js", "text/javascript"),
@@ -91,6 +92,16 @@ const server = Bun.serve({
       return new Response(formatItem(it, it.repos.flatMap((r) => lessonsFor(r)), checksFor(it.prs).map(checkLine)));
     }),
     "/api/refresh": { POST: api(async () => { await refresh(); return Response.json({ ok: true }); }) },
+    // What an agent last said: its recap and its last turn, from its transcript.
+    "/api/agent/turn": api((req) => {
+      const pane = new URL(req.url).searchParams.get("pane") ?? "";
+      const a = herdrState().agents.find((x) => x.pane === pane);
+      if (!a) return Response.json({ error: "no such agent" }, { status: 404 });
+      // PR numbers in what it said get their titles, from every PR on the board.
+      const prs = snapshot().items.flatMap((i) => i.prs.map((p) => ({ repo: p.repo, number: p.number, title: p.title })));
+      const t = agentTurn(a);
+      return Response.json({ ...t, recap: t.recap && withTitles(t.recap, prs), turn: t.turn && withTitles(t.turn, prs) });
+    }),
     "/api/agent/read": api(async (req) => {
       const pane = new URL(req.url).searchParams.get("pane") ?? "";
       try { return Response.json({ text: await readAgent(pane) }); }
@@ -572,6 +583,12 @@ const server = Bun.serve({
       const { pane, item } = await req.json();
       try { return Response.json(await closeAgent(pane, item ?? null)); }
       catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
+    }) },
+    "/api/agent/keep": { POST: api(async (req) => {
+      const { pane } = await req.json();
+      keepAgent(pane);
+      publish();
+      return Response.json({ ok: true });
     }) },
     "/api/agent/focus": { POST: api(async (req) => {
       const { pane } = await req.json();

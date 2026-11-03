@@ -52,6 +52,6 @@
 
 **Verification run**: One commit of a repo running locally on a free port with seeded data, tested in a browser against its issue and mockups. Its folder keeps the evidence and every log. A check counts as passed only when the user confirms it. A newer commit makes the run out of date.
 
-**Cleanup**: Removing what work left behind. The control room reaps what it owns: dead verification worktrees and chart folders with no result. Other worktrees go only when the user asks, and only when no process is in them, they have no uncommitted files, each commit is on a remote, and they were quiet for a day.
+**Cleanup**: Removing what work left behind. The control room reaps what it owns: dead verification worktrees and chart folders with no result. A self-review session closes once its PR's own session has taken its findings: the tell is in that session's transcript with a reply after it. Other worktrees go only when the user asks, and only when no process is in them, they have no uncommitted files, each commit is on a remote, and they were quiet for a day.
 
 **Working session**: The one session that owns a work item's branch and worktree. Each work item also has at most one **helper** session for read-only work: charts, verification rounds and reviews. A start goes to the free session with that role, and is refused when it is busy. Only the user's "New tab" choice opens another.

@@ -1,0 +1,135 @@
+/* The world (world/world.tsx), framed like the 2007 client in fixed mode: the game view top left, the
+   minimap and a side panel on the right, the chat box along the bottom. */
+.world {
+  --rock:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n' color-interpolation-filters='sRGB'><feTurbulence type='fractalNoise' baseFrequency='.035 .05' numOctaves='5' seed='7' stitchTiles='stitch'/><feColorMatrix values='.40 0 0 0 .08  .36 0 0 0 .075  .30 0 0 0 .065  0 0 0 0 1'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --well:#3e3529;
+  --paper:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n' color-interpolation-filters='sRGB'><feTurbulence type='fractalNoise' baseFrequency='.03 .5' numOctaves='3' seed='11' stitchTiles='stitch'/><feColorMatrix values='.12 0 0 0 .76  .12 0 0 0 .7  .1 0 0 0 .56  0 0 0 0 1'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  --frame:0 0 0 1px #000, 0 0 0 2px #6f6352, 0 0 0 3px #000, inset 0 0 0 1px #000;
+  --stone:inset 1px 1px 0 #6f6352, inset -1px -1px 0 #2a241c;
+  min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 214px; grid-template-rows:minmax(0,1fr) 150px; gap:8px; padding:8px;
+  background:var(--rock); font:16px 'RuneScape UF', 'Pixelify Sans', monospace; text-shadow:1px 1px 0 #000; -webkit-font-smoothing:none;
+}
+.world * { font-family:inherit !important; letter-spacing:0 !important; }
+.world kbd { font-size:12px; }
+.world-view { position:relative; min-height:0; overflow:hidden; border:5px solid transparent; border-radius:4px; background:#000 padding-box, var(--rock) border-box; box-shadow:var(--frame); }
+.world-view canvas { position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated; cursor:pointer; }
+.world-hover { position:absolute; left:6px; top:3px; color:#fff; pointer-events:none; z-index:3; }
+.world-hover .npc, .world-menu .npc { color:#ffff00; }
+.world-hover .obj, .world-menu .obj { color:#00ffff; }
+.world-hover .player, .world-menu .player { color:#fff; }
+/* the yellow X where you walk, the red X where you act */
+.world-x { position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; pointer-events:none; z-index:3; animation:world-x .42s steps(4) forwards; }
+.world-x::before, .world-x::after { content:""; position:absolute; left:6px; top:-1px; width:3px; height:16px; background:#ffff00; box-shadow:0 0 0 1px #000; transform:rotate(45deg); }
+.world-x::after { transform:rotate(-45deg); }
+.world-x.red::before, .world-x.red::after { background:#ff0000; }
+@keyframes world-x { from { transform:scale(1.25); } to { transform:scale(.6); opacity:.2; } }
+@media (prefers-reduced-motion: reduce) { .world-x { animation:none; } }
+.world-menu { position:absolute; z-index:6; min-width:170px; background:#000; border:1px solid #5d5447; padding:0 2px 2px; transform:translate(-50%, -6px); }
+.world-menu-h { background:#5d5447; color:#000; text-shadow:none; margin:0 -2px 2px; padding:1px 4px; }
+.world-menu button { display:block; width:100%; text-align:left; border:0; background:none; color:#fff; padding:1px 4px; font:inherit; text-shadow:1px 1px 0 #000; cursor:pointer; white-space:nowrap; }
+.world-menu button:hover, .world-menu button:focus-visible { background:rgba(255,255,255,.08); outline:none; }
+
+/* the side panel: minimap, stone tabs, the panel they open */
+.world-side { grid-row:1 / span 2; grid-column:2; display:flex; flex-direction:column; gap:8px; min-height:0; }
+.world-mm { position:relative; align-self:center; margin-top:4px; }
+.world-mm canvas { display:block; width:152px; height:152px; border-radius:50%; border:6px solid transparent; background:var(--rock) border-box; box-shadow:var(--frame); image-rendering:pixelated; }
+.world-compass { position:absolute; left:-12px; top:-8px; width:38px; height:38px; border-radius:50%; padding:0; cursor:pointer; background:radial-gradient(circle, #d9d1bd 0 45%, #9a8f78 70%); border:3px solid #3a3226; box-shadow:0 0 0 1px #000; }
+.world-compass i { position:absolute; left:50%; top:4px; bottom:4px; width:6px; margin-left:-3px; background:linear-gradient(#c00 50%, #eee 50%); clip-path:polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.world-tabs { display:flex; gap:2px; }
+.world-tabs button { flex:1; height:28px; background:var(--rock); color:#ff981f; border:1px solid #000; box-shadow:var(--stone); font:inherit; font-size:14px; text-shadow:1px 1px 0 #000; cursor:pointer; }
+.world-tabs button:hover { color:#fff; }
+.world-tabs button.on { background:radial-gradient(ellipse at center, #8c1f08, #4a0e04 75%); color:#ffff00; box-shadow:inset 0 0 0 1px #c0391b, inset 0 0 10px #000; }
+.world-panel { flex:1; min-height:0; overflow:auto; border:5px solid transparent; border-radius:8px; padding:4px 8px; background:var(--well) padding-box, var(--rock) border-box; box-shadow:var(--frame); }
+.world-panel h4 { margin:0 0 4px; color:#ff981f; font-weight:400; text-align:center; }
+.world-panel > button { display:block; width:100%; text-align:left; background:none; border:0; padding:1px 0; font:inherit; cursor:pointer; text-shadow:1px 1px 0 #000; overflow-wrap:anywhere; }
+.world-panel > button.mine { color:#ffff00; } .world-panel > button.asked { color:#ff0000; }
+.world-panel > button:hover { color:#fff; }
+.world-panel .none { color:#0dc10d; }
+.world-opts { display:flex; flex-direction:column; gap:3px; }
+.world-opts button, .world-close { height:28px; text-align:left; padding:0 8px; background:#4b4134; color:#ff981f; border:1px solid #000; box-shadow:var(--stone); font:inherit; font-size:14px; text-shadow:1px 1px 0 #000; cursor:pointer; }
+.world-opts button.on { color:#00ff00; }
+.world-opts button:hover, .world-close:hover { color:#fff; }
+.world-close { text-align:center; }
+
+/* text over the world: names white, overhead chat yellow, task plates and area signs soft grey */
+.world-labels { position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:2; }
+.wl { position:absolute; left:0; top:0; white-space:nowrap; text-align:center; text-shadow:1px 1px 0 #000; will-change:transform; }
+.wl-name { color:#fff; font-size:14px; }
+.wl-chat { color:#ffff00; font-size:16px; }
+.wl-area { background:rgba(36,36,36,.55); border-radius:8px; padding:4px 10px; color:#cfcfcf; font-size:13px; line-height:1.25; }
+.wl-area .h { color:#efefef; font-size:15px; margin-bottom:2px; }
+.wl-task { background:rgba(36,36,36,.5); border-radius:6px; padding:1px 7px; color:#d4d4d4; font-size:12px; line-height:1.3; }
+.wl-task.wl-open { background:rgba(24,24,24,.86); border:1px solid #5d5447; padding:5px 10px; font-size:13px; text-align:left; max-width:340px; white-space:normal; z-index:2; }
+.wl-task.wl-open .h { color:#ffff00; font-size:14px; margin-bottom:2px; }
+.wl-task .dim { color:#9a9a9a; }
+
+/* the chat box: the log, the line you type on, and dialogs */
+.world-chat { min-height:0; display:flex; flex-direction:column; overflow:hidden; padding:4px 10px; color:#000; text-shadow:none; border:5px solid transparent; border-radius:6px; background:var(--paper) padding-box, var(--rock) border-box; box-shadow:var(--frame); line-height:1.3; }
+.world-log { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; }
+.world-log > :first-child { margin-top:auto; }
+.world-log .blue { color:#0000ff; } .world-log .red { color:#7f0000; } .world-log .you { color:#0000ff; }
+/* talking to an agent: its name like an NPC's, its recap, then its last turn */
+.world-convo { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:4px; padding-bottom:2px; }
+.world-convo .who { position:sticky; top:0; display:flex; align-items:baseline; gap:8px; background:linear-gradient(#d8cba8, rgba(216,203,168,.92)); }
+.world-convo .who b { color:#7f0000; font-weight:400; }
+.world-convo .who span { color:#5a4a2a; font-size:14px; }
+.world-convo .who button { margin-left:auto; background:none; border:0; color:#7f0000; font:inherit; cursor:pointer; padding:0 4px; }
+.world-convo .lbl { display:block; color:#7f0000; font-size:13px; }
+.world-convo .ctx { display:grid; gap:1px; padding:2px 0 4px; border-bottom:1px solid #a48d63; color:#000; }
+.world-convo .ctx .lbl { display:inline-block; min-width:78px; }
+.world-convo .recap { color:#000; font-style:italic; }
+.world-convo .turn { color:#0000ff; white-space:pre-wrap; overflow-wrap:anywhere; }
+.world-convo .dim { color:#5a4a2a; }
+.world-say { display:flex; align-items:baseline; gap:6px; border-top:1px solid #8a7550; padding-top:2px; }
+.world-say .to { color:#000; white-space:nowrap; }
+.world .world-say input { flex:1; min-width:0; border:0; background:transparent; color:#0000ff; font:inherit; outline:none; padding:0; text-shadow:none; }
+.world-say input:disabled { cursor:default; }
+.world-say .caret { color:#0000ff; }
+.world-dialog { display:flex; flex-direction:column; align-items:center; gap:2px; padding-top:4px; }
+.world-dialog .q { color:#000; text-align:center; }
+.world-dialog .h { color:#7f0000; margin:2px 0; }
+.world-dialog button { background:none; border:0; color:#000; font:inherit; cursor:pointer; padding:0 6px; }
+.world-dialog button:hover, .world-dialog button:focus-visible { color:#fff; text-shadow:1px 1px 0 #000; outline:none; }
+
+/* the Wilderness level, bottom right of the view while you're past the ditch, a skull over it */
+.world-wild { position:absolute; right:12px; bottom:8px; z-index:3; display:flex; flex-direction:column; align-items:center; gap:2px; color:#ffff00; pointer-events:none; }
+.world-wild i { width:22px; height:20px; background:#e8e0c8; border:2px solid #000; border-radius:50% 50% 40% 40%;
+  background-image:radial-gradient(circle at 32% 45%, #000 0 3px, transparent 4px), radial-gradient(circle at 68% 45%, #000 0 3px, transparent 4px); }
+
+/* combat: a health bar over a fighter, hitsplats on the one hit (red with damage, blue for a miss) */
+.hpbar { width:32px; height:5px; background:#d00000; border:1px solid #000; box-shadow:none; }
+.hpbar i { display:block; height:100%; background:#00c000; transition:width .3s; }
+.splat { min-width:24px; height:22px; padding:0 4px; display:grid; place-items:center; color:#fff; font-size:15px; line-height:1;
+  border-radius:46% 54% 50% 50% / 56% 44% 56% 44%; border:2px solid #000; animation:world-splat 1s steps(3) forwards; }
+.splat.hit { background:radial-gradient(circle at 40% 35%, #ff4040, #b00010 70%); }
+.splat.miss { background:radial-gradient(circle at 40% 35%, #5a8aff, #1a3ab0 70%); }
+@keyframes world-splat { from { scale:1.25; } 25% { scale:1; } 80% { opacity:1; } to { opacity:0; } }
+@media (prefers-reduced-motion: reduce) { .splat { animation:none; } }
+
+/* XP: the counter top right, drops floating up under it */
+.world-xpbox { position:absolute; right:8px; top:6px; z-index:3; padding:2px 8px; background:rgba(0,0,0,.55); border:1px solid #5d5447; color:#fff; font-size:14px; pointer-events:none; }
+.world-drops { position:absolute; right:12px; top:34px; z-index:3; display:flex; flex-direction:column; align-items:flex-end; pointer-events:none; }
+.world-drops .drop { color:#fff; font-size:16px; animation:world-drop 1.8s ease-out forwards; }
+.world-drops .drop span { font-size:13px; }
+@keyframes world-drop { from { transform:translateY(70px); opacity:0; } 12% { opacity:1; } 80% { opacity:1; } to { transform:translateY(0); opacity:0; } }
+@media (prefers-reduced-motion: reduce) { .world-drops .drop { animation:none; } }
+.s-building { --sk:#c0c0c0; } .s-testing { --sk:#b06a3a; } .s-reviewing { --sk:#4a8ad8; } .s-charting { --sk:#4a9a3a; } .s-shipping { --sk:#e8c440; }
+.world-drops .drop span { color:var(--sk); }
+/* the Stats tab: a tile per skill, level in yellow */
+.world-stats { display:grid; grid-template-columns:1fr; gap:3px; }
+.world-stats .stat { display:grid; grid-template-columns:14px 1fr auto; align-items:center; gap:6px; padding:3px 6px; background:#2b241c; border:1px solid #000; box-shadow:var(--stone); cursor:help; }
+.world-stats .stat i { width:12px; height:12px; background:var(--sk); border:1px solid #000; transform:rotate(45deg); }
+.world-stats .stat .n { color:#ff981f; font-size:14px; }
+.world-stats .stat .lv { color:#ffff00; }
+.world-stats .stat .lv small { font-size:12px; }
+.world-total { margin-top:6px; color:#ffff00; text-align:center; }
+.world-how { margin-top:6px; color:#a8987a; font-size:13px; text-shadow:none; }
+
+.world-nogl { position:absolute; inset:0; display:grid; place-items:center; color:#ffff00; z-index:4; }
+
+/* narrow screens: the side panel drops under the view */
+@media (max-width: 760px) {
+  .world { grid-template-columns:1fr; grid-template-rows:minmax(240px,1fr) 130px auto; }
+  .world-side { grid-row:auto; grid-column:auto; flex-direction:row; flex-wrap:wrap; align-items:flex-start; }
+  .world-panel { min-height:120px; flex:1 1 200px; }
+}
