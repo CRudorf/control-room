@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Agent, Dependency, Issue, PrRow } from "../shared/types";
-import { applyCommentWaits, applyGates, applyJira, applyRuns, branchFamily, cleanTitle, finishedToday, groupWorkItems, quietAgentsByKey, trackerKey, rankNext, errorKey, shutGates, sortItems, suggestFinished, suggestFor } from "./workitems";
+import { applyCommentWaits, applyGates, applyJira, applyRuns, runMovedOn, branchFamily, cleanTitle, finishedToday, groupWorkItems, quietAgentsByKey, trackerKey, rankNext, errorKey, shutGates, sortItems, suggestFinished, suggestFor } from "./workitems";
 import { featureOf } from "./metrics";
 
 let n = 100;
@@ -351,6 +351,25 @@ describe("unattended runs", () => {
   test("while its agent works, nothing changes", () => {
     const items = groupWorkItems([pr({ title: "ABC-1: a fix" })], [agent({ label: "agent ABC-1", status: "working" })]);
     expect(applyRuns(items, new Map([["ABC-1", run]]))).toEqual(items);
+  });
+});
+
+describe("a run that moved on", () => {
+  const run = { key: "ABC-1", at: "2026-10-30T00:00:00Z", agent: "a" };
+  const issue = (status: string): Issue => ({ key: "ABC-1", summary: "s", status, category: "indeterminate", mine: true, updated: run.at, url: "u", transitions: [] });
+  const empty = groupWorkItems([], [{ pane: "p", tab: "t", workspace: "w", name: "a", label: "agent ABC-1", title: "", workspaceLabel: "", status: "idle", seq: 1, finishedSeq: 1, cwd: "/x", repo: "widgets", branch: null, upstream: null, head: null } as any])[0];
+  const after = "2026-10-31T00:00:00Z", before = "2026-10-29T00:00:00Z";
+  test("product testing ends it", () => expect(runMovedOn(run, empty, issue("Testing"), [])).toBe(true));
+  test("still In Progress with no PR, it holds", () => expect(runMovedOn(run, empty, issue("In Progress"), [])).toBe(false));
+  test("a PR merged after the run ends it", () => expect(runMovedOn(run, empty, issue("In Progress"), [after])).toBe(true));
+  test("a PR merged before the run doesn't", () => expect(runMovedOn(run, empty, issue("In Progress"), [before])).toBe(false));
+  test("an open PR keeps it", () => {
+    const open = { ...empty, prs: [pr({ title: "ABC-1: x" })] };
+    expect(runMovedOn(run, open, issue("In Progress"), [after])).toBe(false);
+  });
+  test("the item keeps its lane", () => {
+    const waiting = { ...empty, lane: "waiting" as const };
+    expect(applyRuns([waiting], new Map([["ABC-1", run]]), () => true)[0].lane).toBe("waiting");
   });
 });
 

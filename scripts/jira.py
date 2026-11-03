@@ -12,6 +12,7 @@ import base64
 import datetime
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -271,11 +272,29 @@ def epoch(at):
     return datetime.datetime.fromisoformat(at).timestamp()
 
 
+USER_NAMES = {}
+
+
+def user_name(account_id):
+    """A person's display name, or "someone" when Jira can't say."""
+    if account_id not in USER_NAMES:
+        try:
+            USER_NAMES[account_id] = request("/user", params={"accountId": account_id}).get("displayName") or "someone"
+        except SystemExit:
+            USER_NAMES[account_id] = "someone"
+    return USER_NAMES[account_id]
+
+
+def plain_mentions(text):
+    """Jira stores a mention as [~accountid:ID]. A reader wants @Name."""
+    return re.sub(r"\[~accountid:([^\]]+)\]", lambda m: "@" + user_name(m.group(1)), text)
+
+
 def first_line(text):
     for line in (text or "").splitlines():
         line = line.strip()
         if line:
-            return line[:300]
+            return plain_mentions(line)[:300]
     return ""
 
 

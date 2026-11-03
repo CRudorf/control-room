@@ -15,9 +15,9 @@ import { herdrState, sendToAgent, startHerdr } from "./herdr";
 import { reranHeads } from "./actions";
 import { pendingDrafts, readDrafts } from "./review";
 import { announce } from "./notifier";
-import { runs } from "./runs";
+import { dismissRun, runs } from "./runs";
 import { pickedNow } from "./suggestions";
-import { quietAgentsByKey, slug, applyGates, applyJira, applyPicked, approvedShipped, applyCommentWaits, applyParks, applyRuns, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
+import { quietAgentsByKey, slug, applyGates, applyJira, applyPicked, approvedShipped, applyCommentWaits, applyParks, applyRuns, runMovedOn, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
 import { jiraError, jiraIssues, startJira, transition } from "./jira";
 import { noteSessions, startUsage, usageFor } from "./usage";
 import { machine, type Machine } from "./health";
@@ -33,7 +33,7 @@ import { findStacks, withStack } from "./stacks";
 import { branchesFor, startBranches } from "./branches";
 import { prFacts } from "./history";
 import { recordBounces } from "./product";
-import type { FinishedItem, Issue, ItemBranch } from "../shared/types";
+import type { FinishedItem, Issue, ItemBranch, Run, WorkItem } from "../shared/types";
 import { parkState, type RulePark } from "./parkrules";
 
 type Saved = { user: string; rows: PrRow[]; fps: Fingerprints; polledAt: string | null; reconciledAt: string | null };
@@ -330,7 +330,9 @@ export function snapshot(): Snapshot {
   const issues = new Map([...jiraIssues(), ...trackerIssues()]);
   const ef = efforts();
   const quiet = quietAgentsByKey(h.agents, { keyOfRef, agentMoves: agentMoves() });
-  const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs, parkOf, quietAgents: (k) => quiet.get(k) ?? [] }), pickedNow(), issues), gs, done), runs());
+  const movedOn = (run: Run, it: WorkItem) => runMovedOn(run, it, issues.get(it.key), prFacts().filter((f) => f.feature === it.key && f.merged).map((f) => f.merged!));
+  const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs, parkOf, quietAgents: (k) => quiet.get(k) ?? [] }), pickedNow(), issues), gs, done), runs(), movedOn);
+  for (const it of grouped) { const run = runs().get(it.key); if (run && movedOn(run, it)) dismissRun(it.key, it.id); }
   const mine = myLastActions();
   // A wait ends for good when its issue is done.
   const waits = commentWaits();

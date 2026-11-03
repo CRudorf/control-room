@@ -531,6 +531,12 @@ export function suggestFinished(j: Issue, f: FinishedItem): Suggested | null {
 
 export type JiraCtx = { branchesFor?: (key: string) => ItemBranch[]; mergedPrs?: (key: string) => string[]; parkOf?: (issue: Issue, branches: ItemBranch[]) => ParkState; quietAgents?: (key: string) => Agent[] };
 
+/** A run has nothing left to review when its issue reached product testing or done, or its PRs merged after it started and none is open. */
+export function runMovedOn(run: Run, it: WorkItem, issue: Issue | undefined, mergedAt: string[]): boolean {
+  if (issue && (issue.category === "done" || ACCEPTANCE.has(issue.status.toLowerCase()))) return true;
+  return !it.prs.length && mergedAt.some((at) => ts(at) >= ts(run.at));
+}
+
 /**
  * Puts Jira on the board: each Jira work item gets its issue's status, its branches and a suggested
  * move. An issue of the user's actively In Progress with nothing on the board yet becomes a work item of
@@ -620,10 +626,10 @@ export function approvedShipped(issues: Map<string, Issue>, branchesFor: (key: s
  * An unattended run whose agent has finished hands the work item back: its action is to review what
  * the run left (RCA, draft PR or skip reason, Jira drafts). It holds until dismissed.
  */
-export function applyRuns(items: WorkItem[], runs: Map<string, Run>): WorkItem[] {
+export function applyRuns(items: WorkItem[], runs: Map<string, Run>, movedOn: (run: Run, it: WorkItem) => boolean = () => false): WorkItem[] {
   return items.map((it) => {
     const run = runs.get(it.key);
-    if (!run || it.agents.some((a) => a.status === "working" || a.status === "blocked")) return it;
+    if (!run || movedOn(run, it) || it.agents.some((a) => a.status === "working" || a.status === "blocked")) return it;
     const why = `unattended run finished · ${it.why}`;
     return { ...it, lane: it.lane === "parked" ? it.lane : "mine", why, urgency: Math.max(it.urgency, 2), primary: { label: `Review run ${it.key}`, run: it.key } };
   });
