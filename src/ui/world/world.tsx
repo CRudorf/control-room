@@ -26,10 +26,11 @@ export type WorldProps = {
 
 const post = (path: string, body: unknown): Promise<{ error?: string; [k: string]: unknown }> =>
   fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((x) => x.json()).catch(() => ({ error: "server unreachable" }));
-const DEMO = new URLSearchParams(location.search).has("demo");
-type Opts = { names: boolean; hideRoofs: boolean; overlays: boolean };
-const OPTS: Opts = { names: true, hideRoofs: true, overlays: true };
-const loadOpts = (): Opts => { try { return { ...OPTS, ...JSON.parse(localStorage.getItem("cr-world") ?? "{}") }; } catch { return OPTS; } };
+// Demo: most agents at work, a few in the Inn, one waiting on you, reshuffled every 20s. `?demo` turns it on.
+const DEMO_LINK = new URLSearchParams(location.search).has("demo");
+type Opts = { names: boolean; hideRoofs: boolean; overlays: boolean; demo: boolean };
+const OPTS: Opts = { names: true, hideRoofs: true, overlays: true, demo: false };
+const loadOpts = (): Opts => { let o = OPTS; try { o = { ...OPTS, ...JSON.parse(localStorage.getItem("cr-world") ?? "{}") }; } catch {} return DEMO_LINK ? { ...o, demo: true } : o; };
 
 /** A path's end pulled back toward where it came from, to stop beside someone rather than on them. */
 function short(path: [number, number][], from: [number, number], by: number): [number, number][] {
@@ -77,10 +78,10 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
   const flip = (k: keyof Opts) => setOpts((o) => { const n = { ...o, [k]: !o[k] }; try { localStorage.setItem("cr-world", JSON.stringify(n)); } catch {} return n; });
   // The demo reshuffles every 20s; re-render now and then to pick that up.
   const [, setTick] = useState(0);
-  useEffect(() => { if (!DEMO) return; const t = setInterval(() => setTick((n) => n + 1), 5000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (!opts.demo) return; const t = setInterval(() => setTick((n) => n + 1), 5000); return () => clearInterval(t); }, [opts.demo]);
   const givers = giversOf(items), byId = new Map(items.map((i) => [i.id, i]));
   const giversRef = useRef(givers); giversRef.current = givers;
-  const folk = townsfolk(items, DEMO ? Math.floor(Date.now() / 20000) : null);
+  const folk = townsfolk(items, opts.demo ? Math.floor(Date.now() / 20000) : null);
   const folkRef = useRef(folk); folkRef.current = folk;
   const asking = folk.filter((a) => a.status === "blocked");
 
@@ -97,12 +98,12 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       for (const u of ups) { say(`Congratulations, you just advanced a ${u.skill} level.`, "blue"); say(`Your ${u.skill} level is now ${u.level}.`, "blue"); fireworks.current += 8; }
     };
     window.addEventListener(XP_EVENT, on);
-    if (!DEMO) return () => window.removeEventListener(XP_EVENT, on);
+    if (!opts.demo) return () => window.removeEventListener(XP_EVENT, on);
     const fake: Gain[] = [{ skill: "Testing", xp: 25, why: "CI passed on widgets#7" }, { skill: "Reviewing", xp: 40, why: "widgets#7 approved" }, { skill: "Building", xp: 30, why: "an agent finished" }, { skill: "Shipping", xp: 100, why: "shipped DEMO-1", shipped: true }];
     let n = 0;
     const t = setInterval(() => window.dispatchEvent(new CustomEvent<XpEvent>(XP_EVENT, { detail: { gains: [fake[n % fake.length]], ups: n++ % 5 === 4 ? [{ skill: "Building", level: 7 }] : [] } })), 9000);
     return () => { window.removeEventListener(XP_EVENT, on); clearInterval(t); };
-  }, []);
+  }, [opts.demo]);
 
   // A line in the chat box when an agent's status changes.
   const was = useRef<Map<string, string> | null>(null);
@@ -513,11 +514,11 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
   const ask = (title: string, yes: string, run: () => void) => setDialog({ title, options: [{ label: yes, run }, { label: "No.", run: () => {} }] });
   // The demo makes statuses up but the agents are real, so it changes nothing about them.
   const agentAct = async (a: Townsfolk, what: string, call: () => Promise<{ error?: string; [k: string]: unknown }>, done: (r: { [k: string]: unknown }) => string) => {
-    if (DEMO) { say(`Not in the demo: it would ${what}.`, "red"); return; }
+    if (optsRef.current.demo) { say(`Not in the demo: it would ${what}.`, "red"); return; }
     const r = await call(); say(r.error ? `Couldn't ${what}: ${r.error}` : done(r), r.error ? "red" : undefined);
   };
   const send = async (a: Townsfolk, text: string) => {
-    if (DEMO) { say(`Not in the demo: it would message ${a.label}.`, "red"); return; }
+    if (optsRef.current.demo) { say(`Not in the demo: it would message ${a.label}.`, "red"); return; }
     const r = await post("/api/agent/send", { pane: a.pane, text, item: a.item });
     say(r.error ? `Couldn't message ${a.label}: ${r.error}` : `To ${a.label}: ${text}`, r.error ? "red" : "you");
     if (!r.error) setTimeout(() => loadSaid(a.pane), 2500);
@@ -618,6 +619,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
             <button className={opts.names ? "on" : ""} onClick={() => flip("names")}>Display names: {opts.names ? "on" : "off"}</button>
             <button className={opts.hideRoofs ? "on" : ""} onClick={() => flip("hideRoofs")}>Roofs: {opts.hideRoofs ? "hidden" : "shown"}</button>
             <button className={opts.overlays ? "on" : ""} onClick={() => flip("overlays")}>Task overlays: {opts.overlays ? "on" : "off"}</button>
+            <button className={opts.demo ? "on" : ""} title="Most agents at work, a few in the Inn, one waiting on you, reshuffled every 20 seconds. Nothing you do reaches the real agents." onClick={() => flip("demo")}>Demo, a busy town: {opts.demo ? "on" : "off"}</button>
           </div>}
         </div>
         <button className="world-close" onClick={onClose}>Close <kbd>esc</kbd></button>

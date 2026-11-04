@@ -766,3 +766,23 @@ button.mtile.drillable:hover { border-color:var(--rule); }
 .lifted .plan .chip { font:700 11px "Archivo Narrow"; padding:2px 7px; border-radius:3px; background:rgba(0,0,0,.08); color:var(--strip-ink-2); }
 .lifted .plan .chip.done { color:var(--strip-ink); }
 .lifted .plan .chip.todo { opacity:.75; }
+
+/* Routines: one card per routine, the weekly loop last. */
+.routines { min-height:0; overflow:auto; display:flex; flex-direction:column; }
+.routines-body { padding:14px 16px; display:flex; flex-direction:column; gap:10px; max-width:900px; }
+.routine { display:flex; flex-direction:column; gap:5px; padding:10px 12px; background:var(--panel); border:1px solid var(--rule); border-radius:4px; }
+.routine.paused { opacity:.6; }
+.routine.builtin { border-style:dashed; }
+.routine-h { display:flex; gap:10px; align-items:baseline; }
+.routine-h b { font:700 15px Archivo; }
+.routine-prompt { font:12.5px/1.45 ui-monospace, Menlo, monospace; white-space:pre-wrap; color:var(--ink-2); }
+.routine .row-acts { display:flex; gap:6px; margin-top:4px; }
+.run-agents { display:flex; flex-direction:column; gap:4px; }
+.run-agent { display:flex; gap:8px; align-items:center; font-size:12.5px; }
+.run-agent .dot { display:inline-block; flex:none; }
+.run-agent .dot.gone { background:transparent; border:1px solid var(--ink-3); }
+.routine.edit label { display:flex; flex-direction:column; gap:3px; }
+.routine.edit .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.routine.edit .row .chips { display:flex; flex-wrap:wrap; gap:5px; }
+.routine.edit .inline { flex-direction:row; align-items:center; gap:5px; }
+.routine.edit .st { font:700 10.5px "Archivo Narrow"; letter-spacing:.06em; color:var(--ink-3); min-width:56px; }

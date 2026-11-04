@@ -18,6 +18,8 @@ import { recordEvent } from "./events";
 import { historySyncedAt, METRICS_FROM, prFacts, startHistory, syncHistory } from "./history";
 import { features, friction, quality, stageTimes, weekly, type Event } from "./metrics";
 import { loopState, runLoop, startLoop, setPulse } from "./loop";
+import { deleteRoutine, idleSeconds, routineRuns, routines, runRoutine, saveRoutine, startRoutines, START_HOUR } from "./routines";
+import { localRepos, repoInProject } from "./repos";
 import { closedTabs, closeTabs, history, listTabs } from "./tidy";
 import { startAgent, tasksFor, type StartRequest } from "./handoff";
 import { startFromSignal, startTriage, suggest } from "./start";
@@ -42,7 +44,7 @@ import { docsView, reviewDoc } from "./docs";
 import { pageRoutes } from "./page";
 import { agentChat, agentTurn, withTitles } from "./turns";
 import { dialogOf } from "./transcript";
-import type { Dialog } from "../shared/types";
+import type { Dialog, Routine } from "../shared/types";
 import { addFlowChange, chartChange, chartRun, flowChangePreview, getVisual, listVisuals, videoChange, visualFile } from "./visuals";
 
 const archStart = (repo: string, prompt: string) => startAgent({ item: `arch-${repo}`, repo, pr: null, kind: "custom", prompt, edited: false, bare: true });
@@ -424,6 +426,20 @@ const server = Bun.serve({
       setPulse(score);
       return Response.json({ ok: true });
     }) },
+    "/api/routines": {
+      GET: api(() => Response.json({ routines: routines(), runs: routineRuns(), repos: localRepos().filter((n) => repoInProject(n)), idle: idleSeconds(), startHour: START_HOUR, loop: loopState().last,
+        // Where each agent a run started is now, by name: its pane, status and workspace, while herdr has it.
+        live: Object.fromEntries(herdrState().agents.filter((a) => a.name).map((a) => [a.name!, { pane: a.pane, status: a.status, workspace: a.workspaceLabel }])) })),
+      POST: api(async (req) => {
+        const b = (await req.json()) as { op: "save" | "delete" | "run"; routine?: Routine; id?: string };
+        try {
+          if (b.op === "save" && b.routine) return Response.json({ routine: saveRoutine(b.routine) });
+          if (b.op === "delete" && b.id) { deleteRoutine(b.id); return Response.json({ ok: true }); }
+          if (b.op === "run" && b.id) return Response.json({ run: await runRoutine(b.id, "routines page") });
+          return Response.json({ error: "say what to do" }, { status: 400 });
+        } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }),
+    },
     "/api/loop": {
       GET: api(() => Response.json(loopState())),
       POST: api(async () => {
@@ -622,5 +638,6 @@ start();
 startHistory();
 startShipped();
 startLoop();
+startRoutines();
 startSuggestions(() => snapshot().items, publish, archStart);
 if (!DEV) startCleanup();

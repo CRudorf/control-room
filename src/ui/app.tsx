@@ -9,6 +9,7 @@ import { SIZE_LABEL, type EffortSize } from "../shared/effort";
 import { VerifyStrip } from "./verify";
 import { workLines } from "../shared/branches";
 import { Cleanup } from "./cleanup";
+import { Routines } from "./routines";
 import { StartAgent } from "./handoff";
 import { Curate, SelfReview } from "./review";
 import { DependencySheet, MoveSheet, ParkSheet, Removed, RemoveSheet } from "./lists";
@@ -67,7 +68,10 @@ function store(k: string, v: unknown) {
 type SheetKind = "park" | "remove" | "dependency" | "move" | "ask";
 type Group = { key: string; title: string; lane?: Lane; collapsed?: boolean; items: (WorkItem & { _group?: string; _also?: string[] })[] };
 
-type Page = "work" | "sessions" | "finished" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup" | "settings" | "world";
+/** `?world` opens the World in its skin, for a link (add `&demo` for a busy town). */
+const WORLD_LINK = new URLSearchParams(location.search).has("world");
+
+type Page = "work" | "sessions" | "finished" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup" | "routines" | "settings" | "world";
 /** The pages in the nav strip. */
 const NAV: { p: Page; label: string; k: string; title: string }[] = [
   { p: "work", label: "Work", k: "esc", title: "Your work items" },
@@ -80,12 +84,13 @@ const NAV: { p: Page; label: string; k: string; title: string }[] = [
 const MORE: { p: Page; label: string; k: string; title: string }[] = [
   { p: "tidy", label: "Tidy", k: "t", title: "Close idle herdr tabs" },
   { p: "cleanup", label: "Cleanup", k: "u", title: "Worktrees and runs that work left behind" },
+  { p: "routines", label: "Routines", k: "q", title: "Prompts that start on their own, daily or weekly" },
   { p: "history", label: "History", k: "h", title: "Everything the control room did" },
   { p: "removed", label: "Removed", k: "e", title: "The editable remove list" },
   { p: "world", label: "World", k: "w", title: "Walk round a town of your work" },
   { p: "settings", label: "Settings", k: ",", title: "Skin and theme" },
 ];
-const PAGE_KEYS: Record<string, Page> = { v: "finished", c: "sessions", i: "metrics", d: "docs", t: "tidy", h: "history", e: "removed", u: "cleanup", ",": "settings" };
+const PAGE_KEYS: Record<string, Page> = { v: "finished", c: "sessions", i: "metrics", d: "docs", t: "tidy", h: "history", e: "removed", u: "cleanup", q: "routines", ",": "settings" };
 
 export function App() {
   const { snap, status, refresh } = useFeed();
@@ -100,7 +105,7 @@ export function App() {
   // A detail pane taking the whole work area; null is the default view.
   const [wide, setWide] = useState<Wide | null>(null);
   // One page at a time. A notification about a shipped PR opens Metrics, where Accomplished shows its watch.
-  const [page, setPage] = useState<Page>(() => new URLSearchParams(location.search).has("shipped") ? "metrics" : "work");
+  const [page, setPage] = useState<Page>(() => WORLD_LINK ? "world" : new URLSearchParams(location.search).has("shipped") ? "metrics" : "work");
   const [menu, setMenu] = useState(false);
   const go = (p: Page) => { setPage((cur) => (cur === p ? "work" : p)); setMenu(false); };
   const open = (p: Page) => { setPage(p); setMenu(false); };
@@ -140,7 +145,7 @@ export function App() {
     else { runPrimary(it); done?.(); }
   }, []);
   const [theme, setTheme] = useState<Theme>(() => stored("cr-theme", "system"));
-  const [skin, setSkin] = useState<SkinId>(() => skinOf(stored("cr-skin", "default")).id);
+  const [skin, setSkin] = useState<SkinId>(() => WORLD_LINK ? "osrs" : skinOf(stored("cr-skin", "default")).id);
   const [seen, setSeen] = useState<Record<string, string> | null>(() => stored("cr-seen", null));
   const qRef = useRef<HTMLInputElement>(null);
 
@@ -149,7 +154,8 @@ export function App() {
     else document.documentElement.setAttribute("data-theme", theme);
     store("cr-theme", theme);
   }, [theme]);
-  useEffect(() => { applySkin(skin); store("cr-skin", skin); }, [skin]);
+  // A ?world link wears the World's skin for that tab only; the skin you chose stays yours.
+  useEffect(() => { applySkin(skin); if (!WORLD_LINK) store("cr-skin", skin); }, [skin]);
   useXp(snap, skinOf(skin).world);
   useEffect(() => store("cr-group", groupBy), [groupBy]);
 
@@ -265,8 +271,8 @@ export function App() {
       if (e.key === "S" || (e.key === "s" && !nextMode)) { setStartBox({ text: "" }); e.preventDefault(); return; }
       // Docs: d again closes it; its own handler takes esc.
       if (doc) { if (e.key === "d") { back(); e.preventDefault(); } return; }
-      if (e.key === "n" && !tidy && !hist && !rem && !met && !ses && page !== "cleanup") { setNextMode((x) => !x); setCur(null); e.preventDefault(); return; }
-      if (nextMode && !tidy && !hist && !rem && !met && !ses && page !== "cleanup") {
+      if (e.key === "n" && !tidy && !hist && !rem && !met && !ses && page !== "cleanup" && page !== "routines") { setNextMode((x) => !x); setCur(null); e.preventDefault(); return; }
+      if (nextMode && !tidy && !hist && !rem && !met && !ses && page !== "cleanup" && page !== "routines") {
         const qi = cur ? nextIds.indexOf(cur) : -1;
         const k = e.key;
         let took = true;
@@ -282,7 +288,7 @@ export function App() {
         if (took) { e.preventDefault(); return; }
       }
       // Tidy, History, Removed and Metrics: their keys switch between them or back to the board; they handle esc.
-      if (tidy || hist || rem || met || ses || page === "cleanup" || page === "settings" || page === "world") {
+      if (tidy || hist || rem || met || ses || page === "cleanup" || page === "routines" || page === "settings" || page === "world") {
         // Under a skin with the World, w opens it and closes it again.
         const p = PAGE_KEYS[e.key] ?? (e.key === "w" && skinOf(skin).world ? "world" : undefined);
         if (p) go(p);
@@ -318,6 +324,7 @@ export function App() {
       else if (k === "r") refresh();
       else if (k === "t") open("tidy");
       else if (k === "u") open("cleanup");
+      else if (k === "q") open("routines");
       else if (k === ",") open("settings");
       else if (k === "h") open("history");
       else if (k === "i") open("metrics");
@@ -390,6 +397,8 @@ export function App() {
           <div className="notice"><p>This browser isn't signed in to the control room.</p><p>Run <code>bun run open</code> in the control-room checkout.</p></div>
         ) : doc ? (
           <Docs onClose={back} />
+        ) : page === "routines" ? (
+          <Routines onClose={back} />
         ) : page === "cleanup" ? (
           <Cleanup onClose={back} />
         ) : page === "world" && skinOf(skin).world && snap ? (
@@ -516,7 +525,7 @@ const KEYS: [string, string][] = [
   ["p", "park the selected item (again to unpark)"], ["x", "remove the selected item's PRs"], ["b", "dependency a PR on another PR or a step"], ["l", "move a PR into another item, or out"], ["o", "take over someone else's PR (review requests)"], ["e", "Removed: the remove list"],
   ["/", "filter by text"], ["g", "group by lane, repo or effort (your work to ship, in points)"], ["f", "focus mode"], ["z", "expand a pane to the whole work area (again, or esc, for the default view)"],
   ["a", "start an agent on the selected item"], ["m", "mark the selected item's feedback addressed"], ["w", "wait on the author (review requests)"], ["⌘⏎", "start it, from the agent sheet"],
-  ["t", "Tidy herdr tabs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: skin and theme"], ["w", "World, under the Old School RS skin"], ["r", "refresh from GitHub now"],
+  ["t", "Tidy herdr tabs"], ["q", "Routines: daily and weekly runs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: skin and theme"], ["w", "World, under the Old School RS skin"], ["r", "refresh from GitHub now"],
   ["?", "this list"], ["esc", "back / clear filters"],
 ];
 

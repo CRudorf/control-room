@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import type { AgentTask } from "../../shared/types";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { ALTAR, ANVILS, BOARD, BONFIRE, CHAPEL, nearChapel, signOf, TOWER, GRILLS, PEWS, SITE, WORKSHOP, BUILDINGS, type Building, buildingAt, CX, CZ, doorOf, ROWS, WILD_SIGN, Z0, FENCES, FURNACE, FURNITURE, H, heightAt, HV, LAMPS, ROCKS, rnd, SIGNS, type Skill, type Tile, tileAt, TILES, type Tree, TREES, W, WALL_H, WALL_T } from "./map";
+import { ALTAR, ANVILS, BOARD, BONFIRE, CHAPEL, nearChapel, KITCHEN, nearKitchen, signOf, TOWER, GRILLS, PEWS, SITE, WORKSHOP, BUILDINGS, type Building, buildingAt, CX, CZ, doorOf, ROWS, WILD_SIGN, Z0, FENCES, FURNACE, FURNITURE, H, heightAt, HV, LAMPS, ROCKS, rnd, SIGNS, type Skill, type Tile, tileAt, TILES, type Tree, TREES, W, WALL_H, WALL_T } from "./map";
 
 const lambert = (color: number) => new THREE.MeshLambertMaterial({ color, flatShading: true });
 export function box(w: number, h: number, d: number, color: number, x = 0, y = 0, z = 0) {
@@ -50,6 +50,7 @@ function house(b: Building) {
   };
   for (const wx of [b.x + 1.6, b.x + b.w - 1.6]) { if (Math.abs(wx - d.x) > 1.2) win(wx, dz, true); if (!inn) win(wx, bz, true); }
   for (const f of b.d < 8 ? [0.5] : [0.3, 0.7]) for (const wx of [b.x + WALL_T / 2, b.x + b.w - WALL_T / 2]) win(wx, b.z + b.d * f, false);
+  if (b.id === "next") questHallWalls(b, wall);
   const x0 = b.x - 0.3, x1 = b.x + b.w + 0.3, z0 = b.z - 0.45, z1 = b.z + b.d + 0.45, zm = b.z + b.d / 2, e = WALL_H + 0.08, r = e + b.d * 0.42;
   const A = [x0, e, z0], B = [x1, e, z0], C = [x1, r, zm], D = [x0, r, zm], E = [x0, e, z1], F = [x1, e, z1];
   const roof = new THREE.Group();
@@ -74,6 +75,31 @@ function house(b: Building) {
   merge(sign, g);
   g.traverse((o) => { o.userData.target = { kind: "building", b }; });
   return g;
+}
+
+/** The Quest hall's walls inside: a painting either side of each side window (a landscape, a castle, a ship at
+ *  sea, a portrait) in gilt frames, and crossed swords over the board. Parts of the walls, so they fade with them. */
+function questHallWalls(b: Building, wall: (m: THREE.Mesh) => void) {
+  const gilt = 0xc8a040, y = 1.55, off = WALL_T + 0.03;
+  const paint = (px: number, pz: number, east: boolean, k: number) => {
+    const fx = east ? b.x + b.w - off : b.x + off, s = east ? -1 : 1, layer = (dx: number, w: number, h: number, dy: number, color: number) => wall(box(0.03, h, w, color, fx + s * dx, y + dy, pz));
+    layer(0, 1.0, 0.8, 0, gilt); layer(0.02, 0.84, 0.64, 0, [0x8ec0e0, 0x6a7a9a, 0x3a6a9a, 0x5a3a2a][k]);
+    if (k === 0) { layer(0.03, 0.84, 0.26, -0.19, 0x5a8a3a); layer(0.03, 0.12, 0.12, 0.16, 0xf0d060); layer(0.035, 0.3, 0.2, -0.1, 0x3a6a2a); }
+    if (k === 1) { layer(0.03, 0.84, 0.18, -0.23, 0x6a8a4a); layer(0.03, 0.4, 0.34, -0.03, 0x9a948a); layer(0.035, 0.1, 0.46, 0.03, 0x8a847a); layer(0.035, 0.1, 0.12, 0.3, 0xc83030); }
+    if (k === 2) { layer(0.03, 0.84, 0.22, -0.21, 0x1a3a6a); layer(0.035, 0.44, 0.1, -0.08, 0x5a3a1e); layer(0.035, 0.04, 0.36, 0.09, 0x3a2412); layer(0.04, 0.26, 0.24, 0.12, 0xf2ecd8); }
+    if (k === 3) { layer(0.03, 0.34, 0.36, -0.14, 0x2b4f8a); layer(0.035, 0.22, 0.22, 0.12, 0xd9a77a); layer(0.04, 0.24, 0.08, 0.24, 0x3a2a1a); }
+  };
+  [b.z + 1.4, b.z + b.d - 1.4].forEach((pz, i) => { paint(0, pz, false, i); paint(0, pz, true, i + 2); });
+  // Crossed swords behind a round shield, either side of the door on the front wall.
+  const dz = b.z + b.d - WALL_T - 0.04, dx = doorOf(b).x;
+  for (const sx of [dx - 1.75, dx + 1.25]) {
+    for (const r of [0.7, -0.7]) {
+      const s = box(0.05, 0.9, 0.03, 0xd8dce4, sx, y, dz); s.rotation.z = r; wall(s);
+      const hilt = box(0.2, 0.05, 0.05, gilt, sx + Math.sin(r) * 0.36, y - Math.cos(r) * 0.36, dz - 0.01); hilt.rotation.z = r; wall(hilt);
+    }
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 10), lambert(sx < dx ? 0x8a2b2b : 0x2b4f8a)); sh.rotation.x = Math.PI / 2; sh.position.set(sx, y, dz - 0.04); wall(sh);
+    wall(box(0.1, 0.1, 0.06, gilt, sx, y, dz - 0.07));
+  }
 }
 
 function furniture(scene: THREE.Object3D) {
@@ -130,6 +156,31 @@ function furniture(scene: THREE.Object3D) {
       for (let s = 0; s < 3; s++) g.add(box(f.w - 0.2, 0.36, 0.08, [0x7a2b2b, 0x2b4f8a, 0x2b6a3a][(Math.round(x) + s) % 3], x, 0.5 + s * 0.6, z + 0.2));
     }
     if (f.kind === "noticeboard") g.add(box(f.w, 1.2, f.d, 0xb89a6a, x, 1.5, z));
+    if (f.kind === "trophycase") {
+      // A low glass-fronted cabinet, cups and medals inside, a shield standing on top.
+      g.add(box(f.w, 0.95, f.d, 0x4a2e16, x, 0.58, z), box(f.w + 0.06, 0.06, f.d + 0.06, 0x7a5430, x, 1.07, z));
+      g.add(glow(box(f.w - 0.2, 0.6, 0.04, 0xbcd8e8, x, 0.62, z + f.d / 2 + 0.01), 0x405060, 0.25));
+      for (const [k, ox] of [-0.8, -0.3, 0.25, 0.75].entries()) {
+        if (k % 2) g.add(box(0.12, 0.12, 0.03, 0xc0c4cc, x + ox, 0.62, z), box(0.04, 0.16, 0.02, 0x2b4f8a, x + ox, 0.76, z));
+        else { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.05, 0.2, 8), lambert(k ? 0xc0c4cc : 0xe8c040)); c.position.set(x + ox, 0.66, z); g.add(c, box(0.12, 0.06, 0.12, 0x3a2412, x + ox, 0.53, z)); }
+      }
+      const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.06, 10), lambert(x < 16 ? 0x8a2b2b : 0x2b4f8a)); shield.rotation.x = Math.PI / 2; shield.position.set(x, 1.42, z - 0.05); g.add(shield);
+      g.add(box(0.12, 0.12, 0.08, 0xe8c040, x, 1.42, z));
+    }
+    if (f.kind === "cup" || f.kind === "statue") {
+      // A stone plinth: the gold cup on one, a knight in silver on the other.
+      g.add(box(0.7, 0.9, 0.7, 0x9a948a, x, 0.6, z), box(0.82, 0.1, 0.82, 0x7a7468, x, 1.07, z), box(0.82, 0.1, 0.82, 0x7a7468, x, 0.2, z));
+      if (f.kind === "cup") {
+        const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.12, 0.36, 10), lambert(0xe8c040)); bowl.position.set(x, 1.55, z);
+        const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.08, 10), lambert(0xd0a830)); foot.position.set(x, 1.16, z);
+        g.add(glow(bowl, 0x806010, 0.25), foot, box(0.06, 0.24, 0.06, 0xd0a830, x, 1.3, z), box(0.08, 0.2, 0.05, 0xe8c040, x - 0.3, 1.58, z), box(0.08, 0.2, 0.05, 0xe8c040, x + 0.3, 1.58, z));
+      } else {
+        const steel = 0xb8bcc4;
+        g.add(box(0.14, 0.4, 0.14, steel, x - 0.09, 1.32, z), box(0.14, 0.4, 0.14, steel, x + 0.09, 1.32, z), box(0.4, 0.42, 0.22, steel, x, 1.73, z), box(0.24, 0.24, 0.24, steel, x, 2.07, z));
+        g.add(box(0.26, 0.05, 0.05, 0x2a2a30, x, 2.08, z + 0.12), box(0.05, 0.9, 0.05, 0xd8dce4, x + 0.3, 1.75, z + 0.05), box(0.22, 0.05, 0.06, 0xb89a3a, x + 0.3, 1.5, z + 0.05));
+        const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 8), lambert(0x8a2b2b)); sh.rotation.x = Math.PI / 2; sh.position.set(x - 0.28, 1.7, z + 0.08); g.add(sh);
+      }
+    }
     scene.add(g);
   }
 }
@@ -202,7 +253,7 @@ function wilderness(scene: THREE.Object3D) {
 function greenery(scene: THREE.Object3D) {
   for (let i = 0; i < 260; i++) {
     const x = 0.5 + rnd(i * 3.7 + 1) * (W - 1), z = 0.5 + rnd(i * 9.1 + 2) * (H - 1);
-    if (tileAt(x, z) !== "g" || buildingAt(x, z) || nearChapel(x, z) || [-0.6, 0.6].some((o) => tileAt(x + o, z) !== "g" || tileAt(x, z + o) !== "g" || buildingAt(x + o, z + o))) continue;
+    if (tileAt(x, z) !== "g" || buildingAt(x, z) || nearChapel(x, z) || nearKitchen(x, z) || [-0.6, 0.6].some((o) => tileAt(x + o, z) !== "g" || tileAt(x, z + o) !== "g" || buildingAt(x + o, z + o))) continue;
     const y = heightAt(x, z);
     // Bushes only: anything smaller is a stray pixel at the client's resolution.
     if (i % 3 === 0) { const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 0), lambert(0x3f6a26)); b.position.set(x, y + 0.2, z); b.scale.y = 0.7; scene.add(b); }
@@ -344,9 +395,46 @@ function innBar(scene: THREE.Object3D) {
   scene.add(box(1.4, 0.7, 0.06, 0x7a5430, cx, 2.55, back + 0.05), box(1.2, 0.5, 0.02, 0xd8c890, cx, 2.55, back));
 }
 
-/** The Kitchen's hoods over the grills, with chimneys through the roof. */
+/** The Kitchen's hoods over the grills, each a flue into the chimney breast on the back wall. */
 function hoods(scene: THREE.Object3D) {
-  for (const [gx, gz] of GRILLS) scene.add(box(1.2, 0.24, 0.8, 0x4a4a4e, gx, 1.85, gz), box(0.5, 0.5, 0.4, 0x4a4a4e, gx, 2.2, gz), box(0.36, 1.6, 0.36, 0x7a5a4a, gx, 3.1, gz));
+  for (const [gx, gz] of GRILLS) scene.add(box(1.2, 0.24, 0.8, 0x4a4a4e, gx, 1.85, gz), box(0.5, 0.5, 0.4, 0x4a4a4e, gx, 2.2, gz + 0.15));
+}
+
+/** The Kitchen: a flagstone floor, stone walls west, east and back, open to the north between oak posts under a
+ *  beam, pans on a rail, a chimney breast up the back wall. Its roof is kitchenRoof, hidden with the others. */
+function kitchen(scene: THREE.Object3D) {
+  const { x, z, w, d, h } = KITCHEN, stone = 0x8a8476, oak = 0x5a3a1e, t = 0.3;
+  scene.add(box(w, 0.08, d, 0x9a948a, x + w / 2, 0.12, z + d / 2));
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) if ((i + j) % 2) scene.add(box(w / 6 - 0.04, 0.02, d / 4 - 0.04, 0x8a847a, x + (i + 0.5) * (w / 6), 0.17, z + (j + 0.5) * (d / 4)));
+  scene.add(box(t, h, d, stone, x + t / 2, h / 2, z + d / 2), box(t, h, d, stone, x + w - t / 2, h / 2, z + d / 2), box(w, h, t, stone, x + w / 2, h / 2, z + d - t / 2));
+  for (const px of [x + t / 2, x + w - t / 2]) scene.add(box(0.34, h, 0.34, oak, px, h / 2, z + 0.17));
+  scene.add(box(w, 0.3, 0.3, oak, x + w / 2, h - 0.15, z + 0.17));
+  // The chimney breast behind the grills; its stack is part of the roof.
+  const cx = GRILLS[1][0];
+  scene.add(box(w - 1.2, 0.5, 0.5, 0x6e6a60, cx, 2.35, z + d - 0.5));
+  // Pans and a ladle on a rail along the west wall.
+  scene.add(box(0.05, 0.05, 2.4, 0x3a3a3a, x + 0.42, 2.0, z + 2.6));
+  for (const [k, pz] of [z + 1.8, z + 2.5, z + 3.2].entries()) {
+    const pan = new THREE.Mesh(new THREE.CylinderGeometry(0.2 - k * 0.03, 0.2 - k * 0.03, 0.05, 10), lambert(0x4a4a50)); pan.rotation.z = Math.PI / 2; pan.position.set(x + 0.4, 1.68, pz); scene.add(pan);
+    scene.add(box(0.03, 0.3, 0.03, 0x2a2a2a, x + 0.42, 1.85, pz));
+  }
+  // A sign over the open front: a loaf and a fish on a board.
+  scene.add(box(1.3, 0.5, 0.08, 0x7a5430, x + w / 2, h + 0.1, z - 0.02), box(0.42, 0.2, 0.1, 0xd8a050, x + w / 2 - 0.3, h + 0.1, z - 0.04), box(0.42, 0.14, 0.1, 0x8ab0c8, x + w / 2 + 0.3, h + 0.1, z - 0.04));
+}
+
+/** The Kitchen's roof: tiles from the beam over the open front back to the rear wall, the chimney through it. */
+export function kitchenRoof() {
+  const { x, z, w, d, h } = KITCHEN, roof = new THREE.Group(), x0 = x - 0.35, x1 = x + w + 0.35, zm = z + d / 2, r = h + 1.6;
+  const tri = (pts: number[][], color: number) => {
+    const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(pts.flat(), 3)); geo.computeVertexNormals();
+    roof.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide })));
+  };
+  const A = [x0, h, z - 0.45], B = [x1, h, z - 0.45], C = [x1, r, zm], D = [x0, r, zm], E = [x0, h, z + d + 0.45], F = [x1, h, z + d + 0.45];
+  tri([A, C, B, A, D, C], 0x8a4a2a); tri([E, F, C, E, C, D], 0x7a3e22); tri([A, E, D, B, C, F], 0x7a7468);
+  // The chimney stack, through the back slope: with the roof, so hiding roofs shows the grills under it.
+  const cx = GRILLS[1][0];
+  roof.add(box(1, 3, 0.7, 0x7a5a4a, cx, h + 1.2, z + d - 0.45), box(1.2, 0.18, 0.9, 0x5a544a, cx, h + 2.75, z + d - 0.45));
+  return roof;
 }
 
 /** The Bonfire: a ring of stones round a stack of logs and a fire. */
@@ -370,7 +458,7 @@ function questBoard(scene: THREE.Object3D) {
 }
 
 function stations(scene: THREE.Object3D) {
-  site(scene); grills(scene); hoods(scene); workshop(scene); chapel(scene); bonfire(scene); questBoard(scene); innBar(scene);
+  site(scene); kitchen(scene); grills(scene); hoods(scene); workshop(scene); chapel(scene); bonfire(scene); questBoard(scene); innBar(scene);
   for (const [x, z] of ANVILS) {
     const y = heightAt(x, z);
     scene.add(box(0.5, 0.45, 0.4, 0x5a3e22, x, y + 0.22, z), box(0.95, 0.22, 0.42, 0x3a3a40, x, y + 0.56, z), box(0.3, 0.14, 0.3, 0x3a3a40, x + 0.55, y + 0.6, z));
@@ -428,6 +516,7 @@ export function buildTown() {
   fences(still); signsAndLamps(still); greenery(still); wilderness(still);
   merge(still, scene);
   const cr = merge(chapelRoof(), scene, true); if (cr) cr.userData.roof = true;
+  const kr = merge(kitchenRoof(), scene, true); if (kr) kr.userData.roof = true;
   const roofs: THREE.Object3D[] = [], walls: THREE.Mesh[] = [];
   scene.traverse((o) => { if (o.userData.roof) roofs.push(o); if (o.userData.wall) walls.push(o as THREE.Mesh); });
   return { scene, ground, roofs, walls };

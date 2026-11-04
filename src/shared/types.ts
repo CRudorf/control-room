@@ -128,6 +128,23 @@ export type Agent = {
  */
 export type AgentTask = "build" | "fix" | "selfreview" | "review" | "verify" | "chart" | "improve" | "grill";
 
+/** A prompt the control room starts on its own in each of its repos, daily or weekly (server/routines.ts). */
+export type Routine = {
+  id: string; name: string;
+  /** Empty runs /signal-to-pr bare: a triage of the repo's live errors. */
+  prompt: string;
+  repos: string[];
+  cadence: "daily" | "weekly";
+  /** Weekly: 1 (Monday) to 5 (Friday). */
+  weekday: number;
+  /** Daily: skip Saturday and Sunday. */
+  weekdaysOnly: boolean;
+  /** "start": the first time that day the user is at the machine; else a local time, "HH:MM". */
+  when: string;
+  enabled: boolean;
+};
+export type RoutineRun = { period: string; at: string; trigger: string; agents: { repo: string; name: string; dryRun: boolean }[]; error: string | null };
+
 /** A session drawn as a conversation (transcript.ts): the user, the agent, a run of tool calls, or a recap. */
 export type ChatEntry = { id: string; kind: "user" | "agent" | "tools" | "recap"; text: string; at: string | null; tools?: { id: string; line: string; failed?: boolean }[] };
 /** The dialog a session waits at, read off its screen: the question, its numbered options, and the screen itself. */

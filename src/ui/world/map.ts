@@ -26,6 +26,10 @@ export const WALL_H = 2.4, WALL_T = 0.22;
 export const CHAPEL = { x: 19, z: 40, w: 11, d: 6, door: 24.5, h: 3.2 };
 export const TOWER = { x: 19.1, z: 38.2, s: 1.6 };
 export const nearChapel = (x: number, z: number) => x >= CHAPEL.x - 1 && x <= CHAPEL.x + CHAPEL.w + 1 && z >= TOWER.z - 1 && z <= CHAPEL.z + CHAPEL.d + 1;
+/** The Kitchen, south of the Library: a cookhouse of stone on three sides, open to the north where its path
+ *  comes in from the road, three grills under hoods along the back wall and a chimney through the roof. */
+export const KITCHEN = { x: 31.5, z: 37, w: 6.5, d: 5, h: 2.6 };
+export const nearKitchen = (x: number, z: number) => x >= KITCHEN.x - 1 && x <= KITCHEN.x + KITCHEN.w + 1 && z >= KITCHEN.z - 1 && z <= KITCHEN.z + KITCHEN.d + 1;
 
 export const riverX = (z: number) => 5 + Math.sin(z / 4) * 1.6;
 export const TILES: Tile[][] = (() => {
@@ -41,6 +45,8 @@ export const TILES: Tile[][] = (() => {
   for (let z = WILD_Z + 1; z < 40; z++) for (const x of [23, 24]) set(x, z, "p");
   for (const b of BUILDINGS) { const [dx, dz] = b.door, [a, c] = dz < CZ ? [dz, 19] : [20, dz]; for (let z = a; z <= c; z++) { set(dx, z, "p"); set(dx + 1, z, "p"); } }
   for (let z = 14; z <= 25; z++) for (let x = 17; x <= 30; x++) set(x, z, "s");
+  // The Kitchen's path: off the road under the Library's south wall, into its open front.
+  for (let x = 25; x < KITCHEN.x + KITCHEN.w - 1; x++) for (const z of [35, 36]) set(x, z, "p");
   return m;
 })();
 export const tileAt = (x: number, z: number): Tile => TILES[Math.max(0, Math.min(ROWS - 1, Math.floor(z) - Z0))][Math.max(0, Math.min(W - 1, Math.floor(x)))];
@@ -67,7 +73,7 @@ export const HV = new Float32Array((W + 1) * (ROWS + 1));
 for (let z = Z0; z <= H; z++) for (let x = 0; x <= W; x++) {
   let h = 0.45 + 0.4 * Math.sin(x * 0.27) * Math.cos(z * 0.21) + 0.2 * Math.sin(x * 0.09 + z * 0.13);
   if (z < WILD_Z) h = 0.5 + 0.55 * Math.sin(x * 0.41 + 1) * Math.cos(z * 0.37) + 0.3 * Math.sin(x * 0.13 - z * 0.19);
-  if (corners.some(([dx, dz]) => { const t = tileAt(x + dx, z + dz); return t === "p" || t === "s"; }) || nearBuilding(x, z) || nearChapel(x, z)) h = 0.08;
+  if (corners.some(([dx, dz]) => { const t = tileAt(x + dx, z + dz); return t === "p" || t === "s"; }) || nearBuilding(x, z) || nearChapel(x, z) || nearKitchen(x, z)) h = 0.08;
   if (corners.some(([dx, dz]) => tileAt(x + dx, z + dz) === "d")) h = -0.35;
   if (corners.some(([dx, dz]) => tileAt(x + dx, z + dz) === "w")) h = -0.8;
   HV[(z - Z0) * (W + 1) + x] = h;
@@ -95,8 +101,10 @@ export const WORKSHOP: { kind: "bench" | "spinning" | "pottery" | "loom"; x: num
 export const ALTAR: [number, number] = [24.5, 45];
 const PRAY_X = [21.1, 22.6, 26.4, 27.9], PRAY_Z = [41.9, 43.5];
 export const PEWS: Rect[] = PRAY_Z.flatMap((z) => [{ kind: "pew", x: 20.5, z: z - 0.85, w: 2.7, d: 0.4 }, { kind: "pew", x: 25.8, z: z - 0.85, w: 2.7, d: 0.4 }]);
-/** The Kitchen, in the Quest hall: two grills under hoods either side of its table, and a worktop. */
-export const GRILLS: [number, number][] = [[13.6, 8.6], [19.4, 8.6]];
+/** The Kitchen's grills, along its back wall, each cooked at from the front. */
+export const GRILLS: [number, number][] = [[32.8, 40.95], [34.75, 40.95], [36.7, 40.95]];
+/** The Quest hall's trophies: a gold cup and a statue on plinths where the hall's sides open out. */
+export const PLINTHS: [number, number][] = [[13.6, 8.6], [19.4, 8.6]];
 /** The Quest board, north of the fountain and facing it: a scroll pinned up for each item that needs the user. */
 export const BOARD = { x: 24, z: 15.4, w: 3.4 };
 export const BOARD_STAND: [number, number] = [24, 16.7];
@@ -114,8 +122,9 @@ const BAR_STOOLS = [11.9, 13.2, 14.5, 15.8, 17.1, 18.4, 19.7];
 export const FURNITURE: Rect[] = [
   ...INN_TABLES.map(([x, z]) => ({ kind: "table", x: x - 0.65, z: z - 0.55, w: 1.3, d: 1.1 })),
   { kind: "bar", x: 11.4, z: 35.65, w: 9, d: 0.6 },
-  { kind: "worktop", x: 12.25, z: 5.3, w: 0.6, d: 1.9 },
-  ...[[10.8, 36.2], [21.2, 36.2], [21.2, 34.6], [20.25, 5.75]].map(([x, z]) => ({ kind: "barrel", x: x - 0.4, z: z - 0.4, w: 0.8, d: 0.8 })),
+  // The Kitchen: a worktop by its west wall, a barrel in the north-east corner.
+  { kind: "worktop", x: 31.85, z: 37.5, w: 0.6, d: 1.9 },
+  ...[[10.8, 36.2], [21.2, 36.2], [21.2, 34.6], [37.2, 37.85]].map(([x, z]) => ({ kind: "barrel", x: x - 0.4, z: z - 0.4, w: 0.8, d: 0.8 })),
   { kind: "counter", x: 29, z: 7.35, w: 8, d: 0.5 },
   { kind: "chest", x: 28.6, z: 5.55, w: 1.2, d: 0.9 },
   // The Library: shelves along the front wall either side of the door and along the back, reading tables, the librarian's desk.
@@ -128,6 +137,9 @@ export const FURNITURE: Rect[] = [
   { kind: "gold", x: 31, z: 5.3, w: 1.6, d: 0.45 },
   { kind: "table", x: 15.85, z: 7.05, w: 1.3, d: 1.1 },
   { kind: "noticeboard", x: 15.6, z: 5.26, w: 1.8, d: 0.08 },
+  // The Quest hall: trophy cabinets along the back wall either side of the board, the cup and the statue on their plinths.
+  ...[12.4, 18.4].map((x) => ({ kind: "trophycase", x, z: 5.24, w: 2.35, d: 0.5 })),
+  ...PLINTHS.map(([x, z], i) => ({ kind: i ? "statue" : "cup", x: x - 0.35, z: z - 0.35, w: 0.7, d: 0.7 })),
 ];
 
 /** Trees about the town: on grass, clear of the roads, the square and the work stations. */
@@ -156,6 +168,7 @@ export const TREES: Tree[] = (() => {
     if (Math.hypot(x - CX, z - CZ) < 11 || stations.some(([sx, sz]) => Math.hypot(x - sx, z - sz) < 3) || fenced(x, z)) continue;
     if (x > SITE.x - 2.5 && x < SITE.x + SITE.w + 2.5 && z > SITE.z - 2.5 && z < SITE.z + SITE.d + 2.5) continue;
     if (x > CHAPEL.x - 2 && x < CHAPEL.x + CHAPEL.w + 2 && z > CHAPEL.z - 2) continue;
+    if (nearKitchen(x, z)) continue;
     // Willows by the river, pines among the oaks.
     const kind = x - riverX(z) < 5 ? "willow" : rnd(i * 5.3) > 0.62 ? "pine" : "oak";
     out.push({ x, z, s: 0.8 + rnd(i) * 0.5, kind });
@@ -191,6 +204,11 @@ export const BLOCKED: Uint8Array = (() => {
   rects.push([BONFIRE[0] - 0.5, BONFIRE[1] - 0.5, 1, 1], [BOARD.x - BOARD.w / 2, BOARD.z - 0.2, BOARD.w, 0.4]);
   for (const w of WORKSHOP) rects.push([w.x - 0.55, w.z - 0.35, 1.1, 0.7]);
   for (const p of PEWS) rects.push([p.x, p.z, p.w, p.d]);
+  {
+    // The Kitchen's walls: west, east and back; the north side is open.
+    const { x, z, w, d } = KITCHEN, t = 0.3;
+    rects.push([x, z, t, d], [x + w - t, z, t, d], [x, z + d - t, w, t]);
+  }
   {
     // The Chapel's walls, with the door in the north one, and its tower.
     const { x, z, w, d, door } = CHAPEL, t = 0.3;
@@ -292,7 +310,7 @@ export const SPOTS: Record<Skill, Spot[]> = {
   construction: [spot(42, SITE.z + SITE.d, 0, 0.8, "Construction site"), spot(44.2, SITE.z + SITE.d, 0, 0.8, "Construction site"),
     spot(SITE.x + SITE.w, 6.5, 0.8, 0, "Construction site"), spot(SITE.x, 6.2, -0.8, 0, "Construction site")],
   crafting: WORKSHOP.map((w) => spot(w.x, w.z, 0, 0.9, "Workshop")),
-  cooking: GRILLS.flatMap(([x, z]) => [spot(x, z, 0, 0.95, "Kitchen"), spot(x, z, 0, -0.95, "Kitchen")]),
+  cooking: GRILLS.map(([x, z]) => spot(x, z, 0, -0.95, "Kitchen")),
   fishing: FISH_Z.map((z) => ({ x: riverX(z) + 2.1, z, face: -Math.PI / 2, at: [riverX(z) + 0.6, z] as [number, number], area: z < CZ ? "Riverbank north" : "Riverbank south" })),
 };
 /** Seats in the Inn: round the two tables, then along the bar. */
@@ -310,4 +328,4 @@ export const BURNING: Spot[] = Array.from({ length: 8 }, (_, i) => {
 /** Where an agent that needs the user waits: the square's south edge, facing the fountain. */
 export const ASKING: [number, number][] = [[17.6, 24.6], [19.2, 25], [21.4, 24.7], [22.6, 25.2]];
 /** Where each area's sign floats. */
-export const AREAS: Record<string, [number, number]> = { Smithy: [40, 15.6], Mine: [42, 24], Grove: [43.6, 34.4], "Riverbank north": [riverX(9) + 2.4, 9], "Riverbank south": [riverX(30) + 2.4, 30], Inn: [16, 31.2], Wilderness: [23.75, -10.2], "Construction site": [43, 6.5], Kitchen: [16.5, 9.4], Workshop: [11.5, 15.1], Chapel: [24.5, 42.7], Bonfire: [45.2, 15.6] };
+export const AREAS: Record<string, [number, number]> = { Smithy: [40, 15.6], Mine: [42, 24], Grove: [43.6, 34.4], "Riverbank north": [riverX(9) + 2.4, 9], "Riverbank south": [riverX(30) + 2.4, 30], Inn: [16, 31.2], Wilderness: [23.75, -10.2], "Construction site": [43, 6.5], Kitchen: [34.75, 38.4], Workshop: [11.5, 15.1], Chapel: [24.5, 42.7], Bonfire: [45.2, 15.6] };

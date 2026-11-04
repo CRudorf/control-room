@@ -166,14 +166,27 @@ describe("agents", () => {
     expect(items[0].keyKind).toBe("agent");
     expect(items[0].lane).toBe("mine");
   });
-  test("sessions without a work item gather under their repo; a task keeps its key", () => {
-    const items = groupWorkItems([], [agent({ label: "rca api-1v", repo: "control-room" }), agent({ label: "tweak", repo: "control-room", status: "blocked" }), agent({ label: "task-tidy-the-logs" })]);
-    expect(items.map((i) => [i.key, i.agents.length]).sort()).toEqual([["control-room", 2], ["task-tidy-the-logs", 1]]);
+  test("sessions without a work item gather under their repo; a task and an investigation keep their own", () => {
+    const items = groupWorkItems([], [agent({ label: "rca api-1v", repo: "control-room" }), agent({ label: "tweak", repo: "control-room", status: "blocked" }), agent({ label: "fiddle", repo: "control-room", status: "blocked" }), agent({ label: "task-tidy-the-logs" })]);
+    expect(items.map((i) => [i.key, i.agents.length]).sort()).toEqual([["control-room", 2], ["rca api-1v", 1], ["task-tidy-the-logs", 1]]);
+  });
+  test("an investigation tab labelled with its error report's short id is that report's work item", () => {
+    const items = groupWorkItems([], [agent({ label: "rca ABC-3-CLIENT-M", repo: "widgets" }), agent({ label: "rca ABC-3-API-2", repo: "widgets" })]);
+    expect(items.map((i) => [i.key, i.keyKind]).sort()).toEqual([["ABC-3-API-2", "agent"], ["ABC-3-CLIENT-M", "agent"]]);
+  });
+  test("a task, a routine's run and the weekly loop keep their own item, from the tab label the control room gives them", () => {
+    const items = groupWorkItems([], [
+      agent({ label: "agent task-tidy-the-logs", repo: "widgets" }),
+      agent({ label: "agent routine-errors-widgets", repo: "widgets", status: "done" }),
+      agent({ label: "agent loop-2030-01-07", repo: "control-room" }),
+      agent({ label: "agent tweak", repo: "widgets", status: "blocked" }),
+    ]);
+    expect(items.map((i) => i.key).sort()).toEqual(["loop-2030-01-07", "routine-errors-widgets", "task-tidy-the-logs", "widgets"]);
   });
   test("an RCA tab naming a Sentry issue by its tail joins that work item", () => {
     const items = groupWorkItems([pr({ title: "ABC-3-CLIENT-M fix: a" })], [agent({ label: "rca client-m", name: "rca-client-m" }), agent({ label: "rca client-n" })]);
     expect(items.find((i) => i.key === "ABC-3-CLIENT-M")!.agents).toHaveLength(1);
-    expect(items.map((i) => i.key).sort()).toEqual(["ABC-3-CLIENT-M", "widgets"]);
+    expect(items.map((i) => i.key).sort()).toEqual(["ABC-3-CLIENT-M", "rca client-n"]);
   });
   test("a finish herdr counted seen still shows, as finished, until it's looked at", () => {
     const [it] = groupWorkItems([], [agent({ label: "spike", status: "idle", finishedSeq: 4 })]);

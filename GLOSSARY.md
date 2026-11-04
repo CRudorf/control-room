@@ -22,6 +22,10 @@
 
 **Review request**: Someone else's PR awaiting the user's review, in **Asked of me**. Always keyed by the PR itself, never merged into the user's own work item, even when they share an issue.
 
+**Investigation**: An agent working one error report to its root cause, in a tab labelled `rca <short id>`. It is that report's work item, and a fix PR naming the report joins it. A routine's triage can start one per pick.
+
+**Routine**: A prompt the control room starts on its own in each of its repos, daily or weekly: at a set time, or when the user starts work (the first time that day they're at the machine). With no prompt it runs `/signal-to-pr` bare, a triage of the repo's live errors. Set on the Routines page.
+
 **Complexity points**: A deterministic score of how hard a PR is to review, from its size, spread, sensitive paths, commits and files that broke before (ADR 0006). The points set its **review tier**.
 
 **Review tier**: Light, standard, deep or critical: how thoroughly to check a review request. Each tier names its **treatments**.

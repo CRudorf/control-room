@@ -246,6 +246,9 @@ export function branchFamily(branch: string): string {
 
 type Group = { key: string; kind: WorkItem["keyKind"]; prs: PrRow[]; agents: Agent[] };
 
+/** Keys that are work of their own, not a repo's: a task, a routine's run, the weekly loop, an investigation (an "rca" tab). */
+const OWN_KEY = /^(task|routine|loop)-|^rca\s/;
+
 /**
  * The user's PRs grouped by Jira key, else Sentry key, else branch; review requests one per PR.
  * An agent joins the work item of its worktree's branch, else of a PR, Jira or Sentry key in
@@ -372,8 +375,10 @@ export function groupWorkItems(rows: PrRow[], agents: Agent[] = [], holds: Map<s
     if (id) { groups.get(id)!.agents.push(a); continue; }
     // An agent of its own is on the board only while it needs looking at or is working.
     if ((a.status === "idle" && a.finishedSeq === null) || a.status === "unknown") continue;
-    // A task keeps its own key; any other session without a work item belongs to its repo.
-    const key = jira ?? sentry ?? (a.label.startsWith("task-") || !a.repo ? a.label : a.repo);
+    // A task, a routine's run, the weekly loop and an investigation keep their own key (the tab says "agent task-…", "rca …");
+    // any other session without a work item belongs to its repo.
+    const bare = a.label.replace(/^agent\s+/, "");
+    const key = jira ?? sentry ?? (OWN_KEY.test(bare) || !a.repo ? bare : a.repo);
     const own = `a-${slug(key)}`;
     const g = groups.get(own) ?? { key, kind: "agent" as const, prs: [], agents: [] };
     g.agents.push(a);
