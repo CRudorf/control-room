@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ASKING, BURNING, PRAYING,BUILDINGS, buildingAt, doorOf, DUELS, findPath, heightAt, inWild, riverX, SEATS, SPOTS, tileAt, walkable } from "./map";
+import { ASKING, BOARD_STAND, BURNING, PRAYING, BUILDINGS, buildingAt, doorOf, DUELS, findPath, heightAt, inWild, riverX, SEATS, SPOTS, tileAt, walkable } from "./map";
 
 /** Every point along a path, sampled finely, from a start. */
 const along = (fx: number, fz: number, path: [number, number][]) => {
@@ -41,7 +41,7 @@ describe("findPath", () => {
 
 describe("the town", () => {
   test("every work spot, seat and waiting place can be reached from the square", () => {
-    for (const s of [...Object.values(SPOTS).flat(), ...SEATS, ...PRAYING, ...BURNING,...ASKING.map(([x, z]) => ({ x, z })), ...DUELS.flatMap(([x, z]) => [{ x: x - 0.75, z }, { x: x + 0.75, z }])]) expect(findPath(24, 23, s.x, s.z).length).toBeGreaterThan(0);
+    for (const s of [...Object.values(SPOTS).flat(), ...SEATS, ...PRAYING, ...BURNING, { x: BOARD_STAND[0], z: BOARD_STAND[1] }, ...ASKING.map(([x, z]) => ({ x, z })), ...DUELS.flatMap(([x, z]) => [{ x: x - 0.75, z }, { x: x + 0.75, z }])]) expect(findPath(24, 23, s.x, s.z).length).toBeGreaterThan(0);
   });
   test("the Wilderness lies north, past a ditch you can cross", () => {
     expect([tileAt(30, -8), tileAt(30, 1), tileAt(30, 3)]).toEqual(["k", "d", "g"]);

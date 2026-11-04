@@ -1,0 +1,41 @@
+---
+title: "Review complexity and effort points"
+---
+flowchart TD
+  pr[A PR's size from GitHub: lines and files per path, commits] --> noise[Drop lockfiles, snapshots, generated and minified files]
+  noise --> split[Split the rest into code, tests and docs]
+  split --> lines["Code lines: under 50 is 0, 50-199 is 1, 200-399 is 2, 400-999 is 3, 1000 and up is 4"]
+  split --> files[More than 10 files: +1]
+  split --> areas[3 or more top-level areas: +1]
+  split --> sens["2 or more sensitive categories (schema, auth, payments, infra or CI, config): +2"]
+  split --> commits[6 or more commits: +1]
+  split --> broke[A file a past PR broke: +2]
+  lines --> score((Complexity points))
+  files --> score
+  areas --> score
+  sens --> score
+  commits --> score
+  broke --> score
+  score --> tier{Tier}
+  tier -->|0-1| light[Light review]
+  tier -->|2-3| standard[Standard review: field guide]
+  tier -->|4-5| deep[Deep review: guide, browser test, flow chart, 3 personas]
+  tier -->|6 and up| critical[Critical review: deep, plus a video explainer]
+  split --> floor{Migration or infra?}
+  floor -->|yes| atleast[At least deep]
+  split --> only{Tests or docs only?}
+  only -->|yes| atmost[Light]
+  split --> runtime{"Changes UI, config, schema or dependencies?"}
+  runtime -->|yes| verify[Browser test, at any tier]
+  score --> review[A review request is worth its points, at least 1; a re-review half, rounded up]
+  mine[One of the user's PRs: 1 per 2 open threads, 1 each for changes requested, failing CI, conflicts; a draft its own points; else 1] --> sum
+  review --> sum((Effort points: summed over the item's PRs))
+  sum --> size{Size}
+  size -->|0-1| S[Small]
+  size -->|2-3| M[Medium]
+  size -->|4-5| L[Large]
+  size -->|6 and up| XL[Extra large]
+  class light,S teal
+  class standard,M blue
+  class deep,L orange
+  class critical,XL pink

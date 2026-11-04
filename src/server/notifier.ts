@@ -4,19 +4,23 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { WorkItem } from "../shared/types";
 import { DEV, PORT } from "./config";
+import { load, save } from "./db";
 import { note } from "./runner";
-import { decide, type Note } from "./notify";
+import { decide, resume, type Announced, type Note } from "./notify";
 
 export const APP = join(homedir(), "Applications", "Control Room.app");
 const BASE = `http://127.0.0.1:${PORT}/`;
 const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 
 // Null until the first announcement after a start, which is a summary (notification rules).
-let seen: Set<string> | null = null;
+// A restart within the hour (a deploy, a crash) picks up what was announced instead: no
+// second summary, and nothing that happened while it was down is lost.
+let seen: Set<string> | null = resume(load<Announced>("announced"), Date.now());
 
 export function announce(items: WorkItem[]) {
   const r = decide(items, seen, BASE);
   seen = r.seen;
+  save("announced", { at: Date.now(), keys: [...seen] } satisfies Announced);
   for (const n of r.notes) send(n);
 }
 

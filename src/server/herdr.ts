@@ -7,6 +7,7 @@ import { basename, dirname, join } from "node:path";
 import type { Agent, AgentStatus } from "../shared/types";
 import { DEV } from "./config";
 import { db, load, save } from "./db";
+import { turnEnds, turnStarts, type Turn } from "./notify";
 import { forgetTasks, taskOf } from "./tasks";
 import { note } from "./runner";
 
@@ -66,6 +67,11 @@ let agents: Agent[] = [];
 // so a finish is tracked here as working → idle/done, whatever herdr thinks was seen.
 const lastStatus = new Map<string, AgentStatus>();
 const finishedAt = new Map<string, number>();
+// Each pane's last finish and turn (notification rules), kept across restarts so a deploy doesn't
+// announce a finish the user was there for; and the panes the control room has just prompted, whose
+// next turn never answers a finish.
+const turns = new Map<string, Turn>(Object.entries(load<Record<string, Turn>>("turns") ?? {}));
+const byBoard = new Set<string>();
 // "Mark seen" from the control room: pane → the state seq it was dismissed at. Kept across
 // restarts; it lapses as soon as the agent changes state again.
 const dismissed = new Map<string, number>(Object.entries(load<Record<string, number>>("dismissed") ?? {}));
@@ -79,6 +85,11 @@ let onChange: () => void = () => {};
 
 export const herdrState = () => ({ agents, up, error });
 
+/** The control room is about to prompt this pane itself: the turn it starts isn't the user replying, so its finish notifies. */
+export const promptedByBoard = (pane: string) => void byBoard.add(pane);
+/** herdr refused that prompt: the next turn is the user's again. */
+export const unprompted = (pane: string) => void byBoard.delete(pane);
+
 // Settles after the first snapshot attempt, so callers that join tabs to work items see agents.
 let settle = () => {};
 const first = new Promise<void>((r) => (settle = r));
@@ -90,6 +101,7 @@ async function snapshot() {
     const tabs = new Map<string, any>(s.tabs.map((t: any) => [t.tab_id, t]));
     const workspaces = new Map<string, any>(s.workspaces.map((w: any) => [w.workspace_id, w]));
     const next: Agent[] = [];
+    let turnsChanged = false;
     for (const a of s.agents) {
       if (a.agent !== "claude") continue;
       const cwd = a.foreground_cwd || a.cwd;
@@ -100,8 +112,20 @@ async function snapshot() {
       let status = (a.agent_status ?? "unknown") as AgentStatus;
       if (dismissed.has(a.pane_id) && dismissed.get(a.pane_id) !== seq && status !== "done") dismissed.delete(a.pane_id);
       if (dismissed.get(a.pane_id) === seq && status === "done") status = "idle";
-      if (status === "working") finishedAt.delete(a.pane_id);
-      else if ((status === "idle" || status === "done") && lastStatus.get(a.pane_id) === "working") finishedAt.set(a.pane_id, seq);
+      const prev = lastStatus.get(a.pane_id);
+      if (status === "working") {
+        finishedAt.delete(a.pane_id);
+        // A new turn, not one resumed from a dialog.
+        if (prev === "idle" || prev === "done") {
+          turns.set(a.pane_id, turnStarts(turns.get(a.pane_id), Date.now(), byBoard.has(a.pane_id)));
+          byBoard.delete(a.pane_id);
+          turnsChanged = true;
+        }
+      } else if ((status === "idle" || status === "done") && prev === "working") {
+        finishedAt.set(a.pane_id, seq);
+        turns.set(a.pane_id, turnEnds(turns.get(a.pane_id), Date.now()));
+        turnsChanged = true;
+      }
       lastStatus.set(a.pane_id, status);
       const was = since.get(a.pane_id);
       if (!was || was.status !== status) since.set(a.pane_id, { status, at: was ? new Date().toISOString() : null });
@@ -112,6 +136,7 @@ async function snapshot() {
         status, cwd, repo: g.repo, branch: g.branch, upstream: g.upstream, head: g.head,
         session: a.agent_session?.value ?? null, focused: !!a.focused, seq,
         finishedSeq: dismissed.get(a.pane_id) === seq ? null : finishedAt.get(a.pane_id) ?? null,
+        replied: turns.get(a.pane_id)?.replied ?? false,
         since: since.get(a.pane_id)!.at,
       });
       Object.assign(next[next.length - 1], taskOf(next[next.length - 1]));
@@ -121,6 +146,8 @@ async function snapshot() {
     forgetTasks(new Set(next.map((a) => a.pane)));
     const kept = JSON.stringify(Object.fromEntries(since));
     if (kept !== sinceSaved) { save("agent_since", JSON.parse(kept)); sinceSaved = kept; }
+    for (const pane of turns.keys()) if (!next.some((a) => a.pane === pane)) { turns.delete(pane); turnsChanged = true; }
+    if (turnsChanged) save("turns", Object.fromEntries(turns));
     const changed = JSON.stringify(next) !== JSON.stringify(agents);
     const panesChanged = next.map((a) => a.pane).join() !== agents.map((a) => a.pane).join();
     agents = next;
@@ -262,10 +289,13 @@ export async function typeInto(pane: string, ops: Typed[], item: string | null) 
 export async function sendToAgent(pane: string, text: string, item: string | null, trigger = "agent pane") {
   const a = agents.find((x) => x.pane === pane);
   let result = DEV ? "dry run" : "sent";
+  // The user's own message from the agent pane is a reply; the loop's and new feedback's aren't.
+  if (trigger !== "agent pane") promptedByBoard(pane);
   try {
     if (!DEV) await request("agent.prompt", { target: pane, text });
   } catch (e) {
     result = `failed: ${(e as Error).message}`;
+    unprompted(pane);
   }
   note({ item, trigger: trigger }, "message-agent", labelOf(a, pane), result, { detail: { text } });
   if (result.startsWith("failed")) throw new Error(result.slice(8));

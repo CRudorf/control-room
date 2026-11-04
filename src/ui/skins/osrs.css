@@ -62,6 +62,10 @@ html:root[data-skin="osrs"] {
 [data-skin="osrs"] #threads .empty { color:#000; }
 [data-skin="osrs"] #threads .btn { text-shadow:1px 1px 0 #000; }
 [data-skin="osrs"] #threads .thread { border-color:#a48d63; }
+/* finding ranks: black chips in the game's colours, readable on parchment and on the dark well alike */
+[data-skin="osrs"] .rank { background:#000; border-color:#000; text-shadow:none; }
+[data-skin="osrs"] .rank.blocking { color:#ff3030; } [data-skin="osrs"] .rank.important { color:#ffff00; }
+[data-skin="osrs"] .rank.should-do { color:#ff981f; } [data-skin="osrs"] .rank.nit { color:#c8c8c8; }
 /* text colours on the dark well */
 [data-skin="osrs"] .lifted .id, [data-skin="osrs"] .lifted .why, [data-skin="osrs"] .meta, [data-skin="osrs"] table.prs th { color:var(--orange); }
 [data-skin="osrs"] .lifted .id b, [data-skin="osrs"] .lifted h1 { color:var(--yellow); }
@@ -88,6 +92,7 @@ html:root[data-skin="osrs"] {
 
 [data-skin="osrs"] main.rackview { padding:6px; gap:6px; background:var(--rock); }
 [data-skin="osrs"] .rack, [data-skin="osrs"] .minirack { background:var(--paper) padding-box, var(--rock) border-box; border:8px solid transparent; border-radius:12px !important; box-shadow:0 0 0 1px #000, inset 0 0 26px rgba(70,45,10,.6); text-shadow:none; padding:4px 12px 90px; }
+[data-skin="osrs"] .minirack { padding:8px 4px; border-width:4px; }
 [data-skin="osrs"] .rack > .cols-h { background:#cbbb94; box-shadow:0 1px 0 #8a7550; top:-4px; }
 [data-skin="osrs"] .cols-h, [data-skin="osrs"] .cols-h .cell, [data-skin="osrs"] .cols-h .sorter { color:#5a4a2a; text-shadow:none; }
 [data-skin="osrs"] .cols-h .sorter.on, [data-skin="osrs"] .cols-h .sorter:hover { color:#000; }
@@ -157,3 +162,24 @@ html:root[data-skin="osrs"] {
 [data-skin="osrs"] .mm-you { position:absolute; left:50%; top:50%; width:4px; height:4px; margin:-2px 0 0 -2px; background:#fff; }
 [data-skin="osrs"] .mm-compass { position:absolute; left:-12px; top:-8px; width:32px; height:32px; border-radius:50% !important; display:grid; place-items:center; font-style:normal;
   background:radial-gradient(circle, #d9d1bd 0 45%, #9a8f78 70%); border:3px solid #3a3226; box-shadow:0 0 0 1px #000; color:#c00; text-shadow:none; font-size:15px; }
+/* a session as a conversation: the chat box's parchment, names black, the agent in blue, you in black */
+[data-skin="osrs"] .chat { background:var(--paper) padding-box, var(--rock) border-box; border:6px solid transparent; border-radius:10px; box-shadow:0 0 0 1px #000, inset 0 0 14px rgba(70,45,10,.5); text-shadow:none; }
+[data-skin="osrs"] .chat-who { color:#000; }
+[data-skin="osrs"] .chat-msg.agent .chat-body, [data-skin="osrs"] .chat-msg.agent .chat-body * { color:#0000ff; }
+[data-skin="osrs"] .chat-msg.agent .chat-body code, [data-skin="osrs"] .chat-msg.agent .chat-body pre, [data-skin="osrs"] .chat-msg.agent .chat-body pre * { color:#7f0000; background:rgba(0,0,0,.06); }
+[data-skin="osrs"] .chat-msg.you .chat-body { background:rgba(255,255,255,.25); border-color:#8a7550; color:#000; }
+[data-skin="osrs"] .chat-recap { color:#7f0000; border-color:#8a7550; }
+[data-skin="osrs"] .chat-tools, [data-skin="osrs"] .chat-working { color:#5a4a2a; }
+[data-skin="osrs"] .chat-tools li.failed, [data-skin="osrs"] .chat .st.pen { color:#a00000; }
+[data-skin="osrs"] .chat-dialog { background:#000; border:1px solid var(--line); }
+[data-skin="osrs"] .chat-dialog-q { color:var(--yellow); }
+[data-skin="osrs"] .chat-dialog-ctx { color:#fff; }
+[data-skin="osrs"] .strip .id .effort { background:#000; color:#c8c8c8; font-size:12px; }
+[data-skin="osrs"] .strip .id .effort.tier-deep { background:#000; color:#ff981f; }
+[data-skin="osrs"] .strip .id .effort.tier-critical { background:#000; color:#ff3030; }
+[data-skin="osrs"] .lifted .plan .st { background:transparent; color:var(--orange); padding:0; }
+[data-skin="osrs"] .lifted .plan.tier-deep .st { color:#ff981f; }
+[data-skin="osrs"] .lifted .plan.tier-critical .st { color:#ff3030; }
+[data-skin="osrs"] .lifted .plan .txt { color:var(--yellow); }
+[data-skin="osrs"] .lifted .plan .chip { background:#000; color:#c8c8c8; }
+[data-skin="osrs"] .lifted .plan .chip.done { color:#00ff00; }

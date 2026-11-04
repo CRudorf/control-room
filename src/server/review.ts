@@ -61,10 +61,13 @@ The guide is how I understand the PR before reading the diff. Shape it like this
   - "Where bugs can happen here": cards marked Bug (one of your verified findings: the input, the output, file:line), Watch (where one could hide and why, file:line), or Fixed (since the earlier guide)
 - "How this was checked": the tests, runs and measurements, with counts and the commit.
 
-Write plainly, short sentences, no em dashes. Only claims you checked by running code.
+Write plainly, short sentences, no em dashes. Only claims you checked by running code. Every file, function or line you name links to it on GitHub at the commit you reviewed: \`<a href="https://github.com/${p.repo}/blob/<sha>/<path>#L12-L20"><code>file.ts:12-20</code></a>\`. Code in another repo links to that repo at the commit you read it at.
 
 Page rules: colors as CSS variables on :root, with a dark set under @media (prefers-color-scheme: dark); fonts from Google Fonts are fine; mermaid only from https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js; nothing else external; readable at 375px wide.`;
 }
+
+/** Reviewers a review runs as: three for a change whose complexity is deep or critical, else two. */
+export const personasFor = (p: PrRow) => (p.complexity?.tier === "deep" || p.complexity?.tier === "critical" ? 3 : 2);
 
 /** A review of someone else's PR, or with `own`, a self-review of the user's before his reviewers see it. */
 export function reviewPrompt(p: PrRow, personas: number, own = false): string {

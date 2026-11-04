@@ -1,13 +1,13 @@
 // The world: the board as a town after the 2007 game client, for the Old School RS skin. Items that need the
-// user are quest givers round the fountain; agents skill at the step they're on, drink in the Inn when idle,
+// user are scrolls on the Quest board by the fountain; agents skill at the step they're on, drink in the Inn when idle,
 // and wait in the square when they need the user; the buildings are pages. Loaded only when opened, so the
 // board never carries Three.js.
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { WorkItem } from "../../shared/types";
 import { AREA_STEP, type Giver, givers as giversOf, type Mode, place, type Townsfolk, townsfolk, VERB } from "./agents";
-import { AREAS, BONFIRE, BUILDINGS, type Building, CX, CZ, doorOf, findPath, H, heightAt, rnd, type Skill, type Spot, W, WILD_Z, Z0 } from "./map";
-import { type Bit, buildTown, burst, smoke, sparkle, hintArrow, MM, minimapImage, mmz, person, type Person, SHIRTS, tool } from "./scene";
+import { AREAS, BOARD, BONFIRE, BUILDINGS, type Building, CX, CZ, doorOf, findPath, H, heightAt, rnd, signOf, slotAt, type Skill, type Spot, W, WILD_Z, Z0 } from "./map";
+import { keeper, outfit, type Bit, buildTown, burst, smoke, sparkle, hintArrow, scroll, MM, minimapImage, mmz, person, type Person, SHIRTS, tool } from "./scene";
 import { type Gain, LEVEL_XP, levelOf, readXp, XP_EVENT, XP_SKILLS, type XpEvent } from "./xp";
 
 type Target = { kind: "giver"; g: Giver } | { kind: "agent"; a: Townsfolk & { area: string; mode: Mode } } | { kind: "building"; b: Building } | { kind: "ground"; x: number; z: number };
@@ -49,7 +49,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
   const hoverRef = useRef<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; opts: Opt[] } | null>(null);
   const [marks, setMarks] = useState<{ id: number; x: number; y: number; red: boolean }[]>([]);
-  const [chat, setChat] = useState<Line[]>([{ t: "Welcome to the control room." }, { t: "Quest givers with a yellow arrow are your turn; red is asked of you. Nearer the fountain is more pressing.", c: "blue" }]);
+  const [chat, setChat] = useState<Line[]>([{ t: "Welcome to the control room." }, { t: "Everyone you see is an agent. What needs you is pinned on the Quest board north of the fountain: yellow pins are your turn, red are asked of you, most pressing top left.", c: "blue" }]);
   const say = (t: string, c?: Line["c"]) => setChat((x) => [...x.slice(-30), { t, c }]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   // The chat box keeps its newest line in view.
@@ -142,19 +142,40 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
     const me = person(0xb8b8b8, 0x4a3a2a);
     const pos = { x: CX + 0.5, z: CZ + 3.2, path: [] as [number, number][], then: null as null | (() => void), face: 0 };
     scene.add(me.g);
+    // The Inn's bartender, wiping the bar.
+    // And the Bank's teller, counting coin, and the Library's librarian, reading.
+    const keepers = (["bartender", "teller", "librarian"] as const).map((k) => {
+      const p = keeper(k), b = BUILDINGS.find((x) => x.id === ({ bartender: "sessions", teller: "finished", librarian: "docs" } as const)[k])!;
+      p.g.traverse((o) => { o.userData.target = { kind: "building", b }; });
+      scene.add(p.g);
+      return { k, p };
+    });
 
-    // Quest givers.
-    const npcs = new Map<string, { p: Person; arrow: THREE.Group }>();
+    // The Quest board: a scroll per item that needs you, and an arrow over it, red when something's asked of you.
+    const scrolls = new Map<string, { g: THREE.Group; lane: string }>();
+    const boardY = heightAt(BOARD.x, BOARD.z);
+    let arrow: THREE.Group | null = null, arrowLane = "";
     const syncNpcs = () => {
-      const want = new Set(giversRef.current.map((g) => g.id));
-      for (const [id, n] of npcs) if (!want.has(id)) { scene.remove(n.p.g, n.arrow); npcs.delete(id); }
-      giversRef.current.forEach((gv, i) => {
-        let n = npcs.get(gv.id);
-        if (!n) { n = { p: person(SHIRTS[i % SHIRTS.length], 0x3a3a5a, rnd(gv.id.length * 13 + gv.id.charCodeAt(0))), arrow: hintArrow(gv.lane === "mine" ? 0xffff00 : 0xff2a1a) }; scene.add(n.p.g, n.arrow); npcs.set(gv.id, n); }
-        n.p.g.position.set(gv.x, heightAt(gv.x, gv.z), gv.z);
-        n.p.g.rotation.y = Math.atan2(CX - gv.x, CZ - gv.z) + Math.PI;
-        n.p.g.traverse((o) => { o.userData.target = { kind: "giver", g: gv }; });
-      });
+      const pinned = giversRef.current.filter((g) => g.slot !== null);
+      const want = new Set(pinned.map((g) => g.id));
+      for (const [id, s] of scrolls) if (!want.has(id)) { scene.remove(s.g); scrolls.delete(id); }
+      for (const gv of pinned) {
+        let s = scrolls.get(gv.id);
+        if (s && s.lane !== gv.lane) { scene.remove(s.g); s = undefined; }
+        if (!s) { s = { g: scroll(gv.lane === "mine" ? 0xe8c020 : 0xd82a1a), lane: gv.lane }; scene.add(s.g); scrolls.set(gv.id, s); }
+        const [sx, sy, sz] = slotAt(gv.slot!);
+        s.g.position.set(sx, boardY + sy, sz); s.g.rotation.z = (rnd(gv.id.length * 7 + gv.id.charCodeAt(0)) - 0.5) * 0.12;
+        s.g.traverse((o) => { o.userData.target = { kind: "giver", g: gv }; });
+      }
+      const lane = !giversRef.current.length ? "" : giversRef.current.some((g) => g.lane === "asked") ? "asked" : "mine";
+      if (lane !== arrowLane) {
+        if (arrow) scene.remove(arrow);
+        arrow = lane ? hintArrow(lane === "asked" ? 0xff2a1a : 0xffff00) : null;
+        if (arrow) scene.add(arrow);
+        arrowLane = lane;
+      }
+      const more = giversRef.current.length - pinned.length;
+      tag("board", "task", [{ t: `Quest board · ${giversRef.current.length ? `${giversRef.current.length} need you` : "nothing needs you"}${more > 0 ? `, ${more} more in the Quest List` : ""}` }], BOARD.x, boardY, BOARD.z + 0.5);
     };
 
     // Text over the world (names, overhead chat, task plates, area signs) is HTML at screen resolution, placed each frame.
@@ -172,7 +193,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
 
     // Agents: each walks to where its status puts it, round things and through doors, then does that there.
     type Fig = { p: Person; held: THREE.Group | null; heldKind: string | null; skill: Skill | null; mode: Mode; spot: Spot; x: number; z: number; path: [number, number][]; seed: number; hit: number;
-      label: string; foe: string | null; role: "attack" | "defend" | null; hp: number; dying: number | null; cheer: number };
+      label: string; foe: string | null; role: "attack" | "defend" | null; hp: number; dying: number | null; cheer: number; task: string | null; dress: THREE.Object3D | null };
     const figs = new Map<string, Fig>();
     const areasNow = new Set<string>();
     const bars = new Map<string, { el: HTMLDivElement; at: THREE.Vector3 }>();
@@ -206,9 +227,11 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
         let f = figs.get(a.pane);
         if (!f) {
           const seed = rnd([...a.pane].reduce((n, c) => n * 31 + c.charCodeAt(0), 7) % 9973);
-          f = { p: person(SHIRTS[Math.floor(seed * SHIRTS.length)], 0x2a2a3a, seed), held: null, heldKind: null, skill, mode, spot: s, x: s.x, z: s.z, path: [], seed, hit: 0, label: a.label, foe: null, role: null, hp: 1, dying: null, cheer: 0 };
+          f = { p: person(SHIRTS[Math.floor(seed * SHIRTS.length)], 0x2a2a3a, seed), held: null, heldKind: null, skill, mode, spot: s, x: s.x, z: s.z, path: [], seed, hit: 0, label: a.label, foe: null, role: null, hp: 1, dying: null, cheer: 0, task: null, dress: null };
           scene.add(f.p.g); figs.set(a.pane, f);
         }
+        // Dressed for its task.
+        if (a.task !== f.task) { if (f.dress) f.p.g.remove(f.dress); f.dress = outfit(a.task); f.p.g.add(f.dress); f.task = a.task; }
         if (Math.hypot(f.spot.x - s.x, f.spot.z - s.z) > 0.05) { const p = findPath(f.x, f.z, s.x, s.z); f.path = p.length ? p : [[s.x, s.z]]; }
         if (mode !== "fight" || f.mode !== "fight") f.hp = 1;
         f.spot = s; f.skill = skill; f.mode = mode; f.label = a.label; f.foe = foe ?? null; f.role = role ?? null;
@@ -374,7 +397,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
           }
         }
         const fy = heightAt(f.x, f.z);
-        f.p.g.position.set(f.x, fy - (f.mode === "pray" && !f.path.length ? 0.42 : 0), f.z); f.p.g.rotation.x = 0;
+        f.p.g.position.set(f.x, fy - (f.mode === "pray" && !f.path.length ? 0.3 : 0), f.z); f.p.g.rotation.x = 0;
         // A fighter's health bar sits over its head, its name and plates above that.
         const fighting = f.mode === "fight", base = fy + (fighting ? 1.9 : 1.72), lift = opt.names ? 0.32 : 0, task = opt.overlays ? 0.42 : 0;
         if (fighting) bar(pane, f.hp, f.x, fy + 1.72, f.z); else if (bars.has(pane)) dropBar(pane);
@@ -403,11 +426,20 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       me.g.position.set(pos.x, heightAt(pos.x, pos.z), pos.z); me.g.rotation.y = pos.face;
       const sw = moving ? Math.sin(now / 90) * 0.7 : 0;
       me.legL.rotation.x = sw; me.legR.rotation.x = -sw; me.armL.rotation.x = -sw * 0.8; me.armR.rotation.x = sw * 0.8;
-      for (const [, n] of npcs) {
-        const b = Math.sin(now / 260 + n.p.g.position.x) * 0.12;
-        n.arrow.position.set(n.p.g.position.x, n.p.g.position.y + 2.25 + b, n.p.g.position.z); n.arrow.rotation.y = now / 600;
-        n.p.armL.rotation.x = Math.sin(now / 700 + n.p.g.position.z) * 0.08;
+      for (const { k, p } of keepers) {
+        if (k === "bartender") { p.armR.rotation.x = -1.1; p.armR.rotation.z = Math.sin(now / 380) * 0.4; p.armL.rotation.x = -0.3; }
+        if (k === "teller") { p.armR.rotation.x = -0.9 - Math.max(0, Math.sin(now / 260)) * 0.3; p.armL.rotation.x = -0.9; }
+        if (k === "librarian") { p.armR.rotation.x = -1.0; p.armL.rotation.x = -1.0; p.g.rotation.y = Math.PI + Math.sin(now / 2400) * 0.15; }
       }
+      // Each house's signpost names it; hovering the house or its sign says what it's for.
+      for (const b of BUILDINGS) {
+        const [sx, sz] = signOf(b), open = hoverRef.current === `building:${b.id}`;
+        tag(`sign:${b.id}`, open ? "task open" : "task", [{ t: b.name, c: "h" }, ...(open ? [{ t: b.does }] : [])], sx, heightAt(sx, sz) + 2.1, sz);
+      }
+      if (arrow) { arrow.position.set(BOARD.x, boardY + 3.6 + Math.sin(now / 260) * 0.12, BOARD.z); arrow.rotation.y = now / 600; }
+      // The hovered scroll shows its key and why it needs you.
+      const hg = hoverRef.current?.startsWith("giver:") ? giversRef.current.find((g) => `giver:${g.id}` === hoverRef.current && g.slot !== null) : null;
+      if (hg) { const [sx, sy, sz] = slotAt(hg.slot!); tag("scroll", "task open", [{ t: hg.key, c: "h" }, { t: hg.why }], sx, sy - 0.6, sz); } else untag("scroll");
 
       const head = new THREE.Vector3(pos.x, heightAt(pos.x, pos.z) + 0.9, pos.z);
       camera.position.set(head.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, head.y + Math.sin(cam.pitch) * cam.dist, head.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist);
@@ -443,7 +475,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       mmc.translate(S / 2, S / 2); mmc.rotate(cam.yaw); mmc.scale(sc, sc); mmc.translate(-pos.x * MM, -mmz(pos.z));
       mmc.imageSmoothingEnabled = false; mmc.drawImage(MAP, 0, 0);
       const dot = (x: number, z: number, c: string) => { mmc.fillStyle = "#000"; mmc.fillRect(x * MM - 1.5, mmz(z) - 1.5, 4, 4); mmc.fillStyle = c; mmc.fillRect(x * MM - 2, mmz(z) - 2, 3.5, 3.5); };
-      for (const gv of giversRef.current) dot(gv.x, gv.z, gv.lane === "mine" ? "#ffff00" : "#ff0000");
+      if (arrowLane) dot(BOARD.x, BOARD.z, arrowLane === "mine" ? "#ffff00" : "#ff0000");
       for (const [, f] of figs) dot(f.x, f.z, "#ffffff");
       const flag = pos.path.at(-1);
       if (flag) { mmc.fillStyle = "#ff0000"; mmc.fillRect(flag[0] * MM - 1, mmz(flag[1]) - 6, 2, 6); }
@@ -471,7 +503,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
   };
   const go = (x: number, z: number, then?: () => void, stopShort = 0) => { if (!api.current?.walk(x, z, then, stopShort)) say("I can't reach that!"); };
   const itemOf = (id: string) => byId.get(id);
-  const talkGiver = (g: Giver) => go(g.x, g.z, () => { say(`You talk to ${g.key}.`); onOpen(g.id); }, 0.9);
+  const talkGiver = (g: Giver) => go(g.x, g.z, () => { say(`You read the scroll for ${g.key}.`); onOpen(g.id); }, 0.9);
   const enter = (b: Building) => { const d = doorOf(b); go(d.inside[0], d.inside[1], () => { say(`You enter the ${b.name}.`); onBuilding(b.id); }); };
   const greet = (a: Townsfolk) => {
     const at = api.current?.where(a.pane); if (!at) return;
@@ -499,8 +531,8 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
   const options = (t: Target, ground: Target | null): Opt[] => {
     const out: Opt[] = [];
     if (t.kind === "giver") {
-      const it = itemOf(t.g.id), w = { what: t.g.key, tone: "npc" as const };
-      out.push({ verb: "Talk-to", ...w, run: () => talkGiver(t.g) });
+      const it = itemOf(t.g.id), w = { what: t.g.key, tone: "obj" as const };
+      out.push({ verb: "Read", ...w, run: () => talkGiver(t.g) });
       if (it?.primary.label) out.push({ verb: it.primary.label, ...w, run: () => onPrimary(it) });
       if (it) out.push({ verb: "Park", ...w, run: () => onSheet("park", it) }, { verb: "Move", ...w, run: () => onSheet("move", it) });
       if (it?.prs.some((p) => p.role === "mine" && !p.draft)) out.push({ verb: "Ask-in-Slack", ...w, run: () => onSheet("ask", it) });
@@ -521,11 +553,11 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
     return out;
   };
   const first = (t: Target | null): Opt => !t || t.kind === "ground" ? { verb: "Walk here", run: () => {} }
-    : t.kind === "giver" ? { verb: "Talk-to", what: t.g.key, tone: "npc", run: () => {} }
+    : t.kind === "giver" ? { verb: "Read", what: t.g.key, tone: "obj", run: () => {} }
     : t.kind === "agent" ? { verb: "Talk-to", what: t.a.label, tone: "player", run: () => {} }
     : { verb: "Enter", what: t.b.name, tone: "obj", run: () => {} };
   const hv = first(hover), more = hover && hover.kind !== "ground" ? options(hover, null).length - 1 : 0;
-  hoverRef.current = hover?.kind === "agent" ? hover.a.pane : null;
+  hoverRef.current = hover?.kind === "agent" ? hover.a.pane : hover?.kind === "giver" ? `giver:${hover.g.id}` : hover?.kind === "building" ? `building:${hover.b.id}` : null;
   const totalXp = XP_SKILLS.reduce((n, k) => n + xp[k], 0), totalLevel = XP_SKILLS.reduce((n, k) => n + levelOf(xp[k]), 0);
 
   return (

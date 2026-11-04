@@ -10,8 +10,8 @@ import type { HandoffTask, WorkItem } from "../shared/types";
 import { DEV, ROOT } from "./config";
 import { db } from "./db";
 import { note } from "./runner";
-import { herdrState, request } from "./herdr";
-import { draftsFile, openFindings, readDrafts, reviewPrompt } from "./review";
+import { herdrState, promptedByBoard, request, unprompted } from "./herdr";
+import { draftsFile, openFindings, personasFor, readDrafts, reviewPrompt } from "./review";
 import { finishLine, rememberTask, taskForStart } from "./tasks";
 
 const short = (repo: string) => repo.split("/").pop()!;
@@ -45,8 +45,8 @@ export function tasksFor(it: WorkItem): HandoffTask[] {
   }
   for (const p of it.prs.filter((p) => p.role === "requested")) {
     const ref = `${p.repo}#${p.number}`;
-    out.push({ kind: "review", pr: ref, label: `Review #${p.number}, 2 personas`, prompt: reviewPrompt(p, 2) });
-    out.push({ kind: "review", pr: ref, label: "3 personas", prompt: reviewPrompt(p, 3) });
+    out.push({ kind: "review", pr: ref, label: `Review #${p.number}, ${personasFor(p)} personas`, prompt: reviewPrompt(p, personasFor(p)) });
+    out.push({ kind: "review", pr: ref, label: `${personasFor(p) + 1} personas`, prompt: reviewPrompt(p, personasFor(p) + 1) });
   }
   const first = it.prs[0];
   out.push({ kind: "custom", pr: first ? `${first.repo}#${first.number}` : null, label: "Something else",
@@ -148,7 +148,8 @@ async function reuseAgent(req: StartRequest, reuse: { pane: string; fresh: boole
       await Bun.sleep(500);
     }
   }
-  await request("agent.prompt", { target: a.pane, text: req.prompt });
+  promptedByBoard(a.pane);
+  await request("agent.prompt", { target: a.pane, text: req.prompt }).catch((e) => { unprompted(a.pane); throw e; });
   await request("tab.rename", { tab_id: a.tab, label }).catch(() => {});
   rememberTask(reuse.pane, taskForStart(req));
   note({ item: req.item, trigger: req.kind }, "start-agent", label, reuse.fresh ? "started in a cleared session" : "started in the same session", { detail: detail });

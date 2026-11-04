@@ -11,6 +11,32 @@ const MAX_PER_POLL = 3;
 const short = (repo: string) => repo.split("/").pop()!;
 const num = (p: PrRow) => `#${p.number}`;
 
+/** A turn that starts this soon after the agent's last finish is someone at its terminal replying. */
+export const REPLY_MS = 10 * 60_000;
+/** A restart this soon after the last announcement picks up where it left off. */
+export const RESUME_MS = 60 * 60_000;
+
+/**
+ * Whether a turn starting at `now` answers the agent's finish at `lastFinish`. A turn the
+ * control room started (the review loop, new feedback, a handoff into an open session) never does.
+ */
+export const answersFinish = (lastFinish: number | undefined, now: number, byBoard: boolean) =>
+  !byBoard && lastFinish !== undefined && now - lastFinish < REPLY_MS;
+
+/** A pane's last finish, and when its current or last turn started and whether that turn answers the finish. */
+export type Turn = { finish?: number; start?: number; replied: boolean };
+export const turnStarts = (t: Turn | undefined, now: number, byBoard: boolean): Turn =>
+  ({ finish: t?.finish, start: now, replied: answersFinish(t?.finish, now, byBoard) });
+/** A reply that set off long work isn't one the user waited for: only a quick turn's finish stays quiet. */
+export const turnEnds = (t: Turn | undefined, now: number): Turn =>
+  ({ finish: now, start: t?.start, replied: !!t?.replied && t.start !== undefined && now - t.start < REPLY_MS });
+
+export type Announced = { at: number; keys: string[] };
+
+/** What a start remembers as announced: the saved keys after a quick restart, else null for one summary. */
+export const resume = (saved: Announced | null, now: number): Set<string> | null =>
+  saved && now - saved.at < RESUME_MS ? new Set(saved.keys) : null;
+
 export function signalsOf(it: WorkItem): Signal[] {
   const out: Signal[] = [];
   for (const a of it.agents) {
@@ -18,7 +44,8 @@ export function signalsOf(it: WorkItem): Signal[] {
     // An agent stopping hands the ball back whatever the PRs say, so these notify in any lane.
     if (a.status === "blocked") out.push({ key: `agent-blocked:${a.pane}@${a.seq}`, text: `agent ${name} is waiting on you`, loud: true, triggers: true, anyLane: true });
     const finished = a.status === "done" ? a.finishedSeq ?? a.seq : a.status === "idle" ? a.finishedSeq : null;
-    if (finished !== null) out.push({ key: `agent-done:${a.pane}@${finished}`, text: `agent ${name} finished`, loud: false, triggers: true, anyLane: true });
+    // A finish in a back-and-forth the user is having with the agent is the reply they're waiting for, not news.
+    if (finished !== null && !a.replied) out.push({ key: `agent-done:${a.pane}@${finished}`, text: `agent ${name} finished`, loud: false, triggers: true, anyLane: true });
   }
   if (it.park?.woke) out.push({ key: `unpark:${it.id}@${it.park.setAt}`, text: `back from parked: ${it.park.woke}`, loud: false, triggers: true, anyLane: true });
   if (it.commentWait?.woke) out.push({ key: `comment:${it.id}@${it.commentWait.setAt}:${it.commentWait.woke}`, text: it.commentWait.woke, loud: true, triggers: true, anyLane: true });
@@ -57,7 +84,7 @@ function titleOf(it: WorkItem): string {
 
 /**
  * What to announce, given what was announced before. `seen` is null on the first run after a
- * start: that gets one summary instead. Returns the notes and the keys to remember.
+ * start that `resume` didn't pick up: that gets one summary instead. Returns the notes and the keys to remember.
  */
 export function decide(items: WorkItem[], seen: Set<string> | null, base: string): { notes: Note[]; seen: Set<string> } {
   // Parked items never notify, agents and all; their wake does.

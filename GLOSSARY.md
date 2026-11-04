@@ -22,6 +22,14 @@
 
 **Review request**: Someone else's PR awaiting the user's review, in **Asked of me**. Always keyed by the PR itself, never merged into the user's own work item, even when they share an issue.
 
+**Complexity points**: A deterministic score of how hard a PR is to review, from its size, spread, sensitive paths, commits and files that broke before (ADR 0006). The points set its **review tier**.
+
+**Review tier**: Light, standard, deep or critical: how thoroughly to check a review request. Each tier names its **treatments**.
+
+**Treatment**: A check a review tier calls for beyond reading: a field guide, a browser test, a flow chart, a video explainer. A change to UI, config, schema or dependencies always calls for a browser test.
+
+**Effort**: How much of the user's own work an item needs to ship, in points: a review request's complexity points, or what's left on one of the user's PRs (threads, failing CI, conflicts). Summed over the item's PRs into a size: Small, Medium, Large or Extra large. Not minutes.
+
 **Agent**: A Claude session running in a herdr tab. It belongs to the work item of its worktree's branch, else the one whose key is in its tab label, else it is a work item of its own, named by the tab label. An agent waiting for input puts its work item in My turn.
 
 **Signal**: What a new piece of work starts from. It is anything that points at a problem or a request: an issue in a tracker, an error report, a session replay, a log line. A project chooses its sources. Starting from a signal opens an agent on it. A signal with no key of its own gets a work item named by its tab label, until an issue or a branch claims it.

@@ -238,28 +238,3 @@ export function Removed({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Effort: a named level above work items, for work spread over several keys. Local only. */
-export function EffortSheet({ it, items, onClose }: { it: WorkItem; items: WorkItem[]; onClose: () => void }) {
-  const names = [...new Set(items.flatMap((x) => (x.effort ? [x.effort] : [])))].sort();
-  const [name, setName] = useState(it.effort ?? "");
-  const go = async (effort: string | null) => {
-    const r = await post("/api/effort", { key: it.key, effort });
-    toast(r.error ? `Couldn't set the effort: ${r.error}` : effort ? `${it.key} is in ${effort}` : `${it.key} left ${it.effort}`);
-    onClose();
-  };
-  return (
-    <Sheet title={`Effort for ${it.key}`} onClose={onClose}>
-      <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) void go(name.trim()); }}>
-        <input className="field" autoFocus list="efforts" placeholder="e.g. retire the old tenants" value={name} onChange={(e) => setName(e.target.value)} />
-        <datalist id="efforts">{names.map((n) => <option key={n} value={n} />)}</datalist>
-        {names.length > 0 && <div className="chips" style={{ margin: "10px 0 0" }}>{names.map((n) => <button type="button" key={n} className={`chip ${name === n ? "on" : ""}`} onClick={() => setName(n)}>{n}</button>)}</div>}
-        <p className="st dim" style={{ margin: "8px 0 0" }}>Group the board by effort with g. Kept here only.</p>
-        <div className="row">
-          {it.effort && <button type="button" className="btn" onClick={() => void go(null)}>Take out of {it.effort}</button>}
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" type="submit" disabled={!name.trim()}>Set <kbd>⏎</kbd></button>
-        </div>
-      </form>
-    </Sheet>
-  );
-}

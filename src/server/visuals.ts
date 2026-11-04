@@ -206,6 +206,16 @@ export async function chartChange(o: { item: string; pr: string; key: string | n
   try { return await startChart(o); } finally { starting.delete(o.pr); }
 }
 
+/** A video explainer of someone's PR, for a review whose complexity calls for one: an agent renders it into a new visual folder. */
+export async function videoChange(o: { item: string; pr: string; key: string | null }) {
+  const { repo, n } = prParts(o.pr);
+  const { id, dir } = newVisualDir(`video-${repo.split("/").pop()}-${n}`);
+  const { startAgent } = await import("./handoff");
+  const r = await startAgent({ item: o.item, repo, pr: o.pr, kind: "custom", edited: false, bare: true, verb: "video",
+    prompt: `Make a short video explainer of PR ${o.pr} for me as its reviewer, with the /hyperframes:pr-to-video skill: what it changes, how the flow runs now, and where it's risky. Every claim checked against the code. Render it to \`${dir}/video.mp4\`. Then write \`${dir}/meta.json\` as {"id": "${id}", "kind": "video", "title": "<what the PR does, in a few words>", "key": ${JSON.stringify(o.key)}, "pr": "${o.pr}", "createdAt": "<now, ISO 8601>", "rulesHold": null, "files": ["video.mp4"]}. Post nothing to the PR.` });
+  return { ...r, id };
+}
+
 async function startChart(o: { item: string; pr: string; key: string | null; merged: boolean }) {
   const { repo, n } = prParts(o.pr);
   const { id, dir } = newVisualDir(`change-${repo.split("/").pop()}-${n}`);

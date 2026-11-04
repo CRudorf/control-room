@@ -8,8 +8,9 @@ import type { GuideView, PrRow, WorkItem } from "../shared/types";
 import { prRef } from "../shared/types";
 import { load, save } from "./db";
 import { read, write } from "./runner";
+import { linkedGuide } from "./guidelinks";
 import { startAgent } from "./handoff";
-import { guideFile, guidePath, metaFile, reviewPrompt } from "./review";
+import { guideFile, guidePath, metaFile, personasFor, reviewPrompt } from "./review";
 
 /** Agents running guides at once, at most; each is a full review. */
 export const MAX_GUIDES = 2;
@@ -92,7 +93,7 @@ export async function startGuides(items: WorkItem[], lowMemory: boolean, publish
       save("guides", started);
       save("selfreviews", selfDone);
       try {
-        await startAgent({ item: it.id, repo: p.repo, pr: prRef(p), kind: own ? "selfreview" : "review", prompt: reviewPrompt(p, 2, own), edited: false });
+        await startAgent({ item: it.id, repo: p.repo, pr: prRef(p), kind: own ? "selfreview" : "review", prompt: reviewPrompt(p, personasFor(p), own), edited: false });
         log(`${own ? "self-review" : "field guide"} started on ${prRef(p)} at ${p.head.slice(0, 7)}`);
       } catch (e) {
         log(`field guide on ${prRef(p)} failed to start:`, (e as Error).message);
@@ -112,11 +113,12 @@ export async function startGuides(items: WorkItem[], lowMemory: boolean, publish
 // to the board's API, and scripts only from the mermaid CDN.
 const CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox; default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; connect-src 'none'";
 
-/** The guide page, for the /guide route. */
-export function guidePage(ref: string): Response {
+/** The guide page, for the /guide route, with the code it names linked to GitHub (guidelinks.ts). */
+export async function guidePage(ref: string): Promise<Response> {
   const f = guideFile(ref);
   if (!/^[\w.-]+\/[\w.-]+#\d+$/.test(ref) || !existsSync(f)) return new Response("no guide for that PR yet", { status: 404 });
-  return new Response(Bun.file(f), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": CSP } });
+  const html = await linkedGuide(f, ref.split("#")[0], meta(ref)?.sha ?? null).catch(() => readFileSync(f, "utf8"));
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": CSP } });
 }
 
 /** Opens an agent that publishes the guide as a private claude.ai artifact and records its link. */

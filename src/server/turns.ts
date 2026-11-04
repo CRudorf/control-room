@@ -2,8 +2,9 @@
 // text of its last turn, everything it wrote since the user's last message. The World shows these when
 // the user talks to an agent.
 import { closeSync, openSync, readSync, statSync } from "node:fs";
-import type { Agent } from "../shared/types";
+import type { Agent, ChatEntry } from "../shared/types";
 import { transcriptPath } from "./tasks";
+import { entriesOf } from "./transcript";
 
 export type Turn = { recap: string | null; recapAt: string | null; turn: string | null; at: string | null };
 
@@ -24,6 +25,13 @@ export function lastTurn(jsonl: string, max = 2400): Turn {
   }
   const all = said.join("\n\n");
   return { recap, recapAt, turn: all ? (all.length > max ? `…${all.slice(-max)}` : all) : null, at: all ? at : null };
+}
+
+/** The session as a conversation (transcript.ts), from the end of its transcript. */
+export function agentChat(a: Pick<Agent, "session" | "cwd">): ChatEntry[] {
+  const path = transcriptPath(a);
+  if (!path) return [];
+  try { return entriesOf(tail(path, 1536 * 1024)); } catch { return []; }
 }
 
 /** The end of a file: enough for the last few turns without reading a long session whole. */

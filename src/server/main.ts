@@ -1,7 +1,7 @@
 import { note as recordNote } from "./runner";
 import { join } from "node:path";
 import { DEV, PORT, ROOT } from "./config";
-import { finishedSince, adopt, copyAsk, moveJira, nudge, publish, setEffort, refetch, refresh, remove, removed, restore, setDependency, setHold, setAgentMove, setCommentWait, setMove, setPark, snapshot, start, subscribe } from "./feed";
+import { finishedSince, adopt, copyAsk, moveJira, nudge, publish, refetch, refresh, remove, removed, restore, setDependency, setHold, setAgentMove, setCommentWait, setMove, setPark, snapshot, start, subscribe } from "./feed";
 import { startFeedbackTask } from "./feedbacktask";
 import type { Move } from "../shared/types";
 import { markAddressed, postReplies, rerequest, rerunCi, resolveThreads, updateBranch, type Reply } from "./actions";
@@ -40,8 +40,10 @@ import type { HeldReply } from "../shared/types";
 import { archAgentPrompt, dismissSuggestion, judgeSuggestions, pickupSuggestion, type PickupSteps, runArchitecture, startSuggestions, suggestionsView, syncSuggestions } from "./suggestions";
 import { docsView, reviewDoc } from "./docs";
 import { pageRoutes } from "./page";
-import { agentTurn, withTitles } from "./turns";
-import { addFlowChange, chartChange, chartRun, flowChangePreview, getVisual, listVisuals, visualFile } from "./visuals";
+import { agentChat, agentTurn, withTitles } from "./turns";
+import { dialogOf } from "./transcript";
+import type { Dialog } from "../shared/types";
+import { addFlowChange, chartChange, chartRun, flowChangePreview, getVisual, listVisuals, videoChange, visualFile } from "./visuals";
 
 const archStart = (repo: string, prompt: string) => startAgent({ item: `arch-${repo}`, repo, pr: null, kind: "custom", prompt, edited: false, bare: true });
 
@@ -101,6 +103,20 @@ const server = Bun.serve({
       const prs = snapshot().items.flatMap((i) => i.prs.map((p) => ({ repo: p.repo, number: p.number, title: p.title })));
       const t = agentTurn(a);
       return Response.json({ ...t, recap: t.recap && withTitles(t.recap, prs), turn: t.turn && withTitles(t.turn, prs) });
+    }),
+    "/api/agent/chat": api(async (req) => {
+      const pane = new URL(req.url).searchParams.get("pane") ?? "";
+      const a = herdrState().agents.find((x) => x.pane === pane);
+      if (!a) return Response.json({ error: "no such agent" }, { status: 404 });
+      const prs = snapshot().items.flatMap((i) => i.prs.map((p) => ({ repo: p.repo, number: p.number, title: p.title })));
+      const entries = agentChat(a).map((e) => (e.kind === "agent" || e.kind === "recap" ? { ...e, text: withTitles(e.text, prs) } : e));
+      // A dialog isn't in the transcript: read it off the screen while the session waits at one.
+      let dialog: Dialog | null = null;
+      if (a.status === "blocked") {
+        const screen = await readAgent(pane).catch(() => "");
+        dialog = dialogOf(screen) ?? { question: "The session is waiting at a prompt.", context: null, options: [], screen: screen.split("\n").slice(-30).join("\n").trim() };
+      }
+      return Response.json({ entries, dialog, status: a.status });
     }),
     "/api/agent/read": api(async (req) => {
       const pane = new URL(req.url).searchParams.get("pane") ?? "";
@@ -353,10 +369,10 @@ const server = Bun.serve({
       try { await openArtifact(path); return Response.json({ ok: true }); }
       catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }) },
-    "/api/effort": { POST: api(async (req) => {
-      const { key, effort } = (await req.json()) as { key: string; effort: string | null };
-      setEffort(key, effort?.trim() || null);
-      return Response.json({ ok: true });
+    "/api/visuals/video": { POST: api(async (req) => {
+      const { item, pr, key } = (await req.json()) as { item: string; pr: string; key: string | null };
+      try { return Response.json(await videoChange({ item, pr, key })); }
+      catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
     }) },
     "/api/dependency": { POST: api(async (req) => {
       const { ref, on, step, item } = (await req.json()) as { ref: string; on: string | null; step: string | null; item: string | null };
@@ -523,7 +539,7 @@ const server = Bun.serve({
       const a = it?.agents.find((x) => x.status !== "working") ?? it?.agents[0];
       if (!p || !a) return Response.json({ error: "no review agent on this item" }, { status: 404 });
       try {
-        await sendToAgent(a.pane, `The author pushed since your review; the PR head is now ${p.head}. Pull it, re-check each finding against the new code, drop the ones that are fixed, and rewrite the drafts file pinned to the new commit.`, item);
+        await sendToAgent(a.pane, `The author pushed since your review; the PR head is now ${p.head}. Pull it, re-check each finding against the new code, drop the ones that are fixed, and rewrite the drafts file pinned to the new commit.`, item, "review");
         return Response.json({ result: `asked ${a.name ?? a.label} to re-check` });
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
     }) },

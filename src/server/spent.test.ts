@@ -22,6 +22,11 @@ describe("spentOf", () => {
     expect(spentOf(facts({ task: "review", it: { keyKind: "review", lane: "waiting", prs: [pr] } as never }))?.reason).toBe("your review is posted");
     expect(spentOf(facts({ task: "review", it: null }))?.reason).toBe("its review request is gone");
   });
+  test("a review of someone else's PR: not done at its DONE line, and never closed without asking", () => {
+    expect(spentOf(facts({ task: "review", done: "drafts.json", it: { keyKind: "review", lane: "asked", prs: [pr] } as never }))).toBeNull();
+    expect(spentOf(facts({ task: "review", it: { keyKind: "review", lane: "waiting", prs: [pr] } as never }))?.exact).toBe(false);
+    expect(spentOf(facts({ task: "selfreview", done: "" }))?.exact).toBe(true);
+  });
   test("a chart: once one is made for its PR after it started", () => {
     const old = { pr: "acme/widgets#7", createdAt: "2030-01-01T00:00:00Z", url: "u-old" }, fresh = { ...old, createdAt: "2030-01-02T12:00:00Z", url: "u-new" };
     expect(spentOf(facts({ task: "chart", charts: [old] }))).toBeNull();

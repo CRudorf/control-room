@@ -104,11 +104,13 @@ describe("firemaking", () => {
 });
 
 describe("givers", () => {
-  test("only items that need the user, nearer the fountain when more pressing", () => {
+  test("only items that need the user, pinned on the Quest board in the board's order", () => {
     const g = givers([item({ id: "a", lane: "mine", urgency: 3 }), item({ id: "b", lane: "asked", urgency: 1 }), item({ id: "c", lane: "waiting" })]);
-    expect(g.map((x) => x.id)).toEqual(["a", "b"]);
-    const d = (x: { x: number; z: number }) => Math.hypot(x.x - 24, x.z - 20);
-    expect(d(g[0])).toBeLessThan(d(g[1]));
+    expect(g.map((x) => [x.id, x.slot])).toEqual([["a", 0], ["b", 1]]);
+  });
+  test("past the board's twelve slots, an item has no scroll", () => {
+    const g = givers(Array.from({ length: 14 }, (_, i) => item({ id: `i${i}`, lane: "mine" })));
+    expect([g[11].slot, g[12].slot, g[13].slot]).toEqual([11, null, null]);
   });
   test("not an item that's only waiting because of its agents: the agent shows that", () => {
     const g = givers([

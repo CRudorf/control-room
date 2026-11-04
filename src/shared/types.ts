@@ -72,6 +72,10 @@ export type PrRow = {
   threads?: OpenThread[];
   /** Another open PR of the user's this one builds on; `behind`: the parent has commits this one lacks. */
   stack?: { on: string; number: number; branch: string; head: string; behind: boolean };
+  /** Lines and files changed; `paths` holds GitHub's first 100 files as [path, lines]. */
+  size?: { add: number; del: number; files: number; commits?: number; paths: [string, number][] } | null;
+  /** How complex it is to review, and the treatments that calls for (shared/effort.ts). */
+  complexity?: import("./effort").Complexity;
 };
 
 /** An unresolved review thread on someone else's PR. `yours`: The user is in it and someone else has the last word. */
@@ -107,13 +111,14 @@ export type Agent = {
   seq: number;
   /** The seq at which it last went from working to finished, seen or not; null once it works again. */
   finishedSeq: number | null;
+  /** Its current or last turn answered its previous finish within minutes: the user is in the conversation, so its finish isn't news. */
+  replied?: boolean;
   /** When it took its current status; null when the control room first saw it already in it. */
   since?: string | null;
   /** What it's for (tasks.ts), and how that's known. */
   task?: AgentTask;
   taskFrom?: "start" | "skill" | "label";
-  /** Its job is done (spent.ts): why, what it left, and when the control room closes it (null: the user does). */
-  spent?: { reason: string; output: string | null; since: string; closesAt: string | null };
+  /** Its job is done (spent.ts): why, what it left, and when the control room closes it (null: the user does). */  spent?: { reason: string; output: string | null; since: string; closesAt: string | null };
 };
 
 /**
@@ -122,6 +127,11 @@ export type Agent = {
  * a change; improve: the self-improvement loop, lessons, architecture and retro work; grill: grilling a plan.
  */
 export type AgentTask = "build" | "fix" | "selfreview" | "review" | "verify" | "chart" | "improve" | "grill";
+
+/** A session drawn as a conversation (transcript.ts): the user, the agent, a run of tool calls, or a recap. */
+export type ChatEntry = { id: string; kind: "user" | "agent" | "tools" | "recap"; text: string; at: string | null; tools?: { id: string; line: string; failed?: boolean }[] };
+/** The dialog a session waits at, read off its screen: the question, its numbered options, and the screen itself. */
+export type Dialog = { question: string; context: string | null; options: { n: number; label: string; detail: string | null; current: boolean }[]; screen: string };
 
 /** Waiting on author: a review request handed back until its author acts. */
 export type Hold = { ref: string; setAt: string; head: string; since: string; note: string };
@@ -213,8 +223,8 @@ export type WorkItem = {
   moved?: string[];
   /** The agents here by the user's choice in the Move sheet. */
   agentsMoved?: string[];
-  /** The effort it belongs to, a level above work items (e.g. retiring a tenant), set by hand. */
-  effort?: string;
+  /** The user's time it needs to ship, estimated from its PRs (shared/effort.ts); absent with no PR. */
+  effort?: import("./effort").Effort;
   /** Handoff docs, run folders and recordings named for it, newest first. */
   artifacts?: Artifact[];
   /** Claude tokens spent on it, with the electricity and water estimate. */

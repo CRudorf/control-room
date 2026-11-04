@@ -1,8 +1,9 @@
 // The town's 3D models, after the 2007 client: low-poly and flat-shaded, ground colours blended between
 // tiles. Everything is built from map.ts, so what's drawn is what people walk round.
 import * as THREE from "three";
+import type { AgentTask } from "../../shared/types";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { ALTAR, ANVILS, BONFIRE, CHAPEL, GRILLS, PEWS, SITE, WORKSHOP, BUILDINGS, type Building, buildingAt, CX, CZ, doorOf, ROWS, WILD_SIGN, Z0, FENCES, FURNACE, FURNITURE, H, heightAt, HV, LAMPS, ROCKS, rnd, SIGNS, type Skill, type Tile, tileAt, TILES, type Tree, TREES, W, WALL_H, WALL_T } from "./map";
+import { ALTAR, ANVILS, BOARD, BONFIRE, CHAPEL, nearChapel, signOf, TOWER, GRILLS, PEWS, SITE, WORKSHOP, BUILDINGS, type Building, buildingAt, CX, CZ, doorOf, ROWS, WILD_SIGN, Z0, FENCES, FURNACE, FURNITURE, H, heightAt, HV, LAMPS, ROCKS, rnd, SIGNS, type Skill, type Tile, tileAt, TILES, type Tree, TREES, W, WALL_H, WALL_T } from "./map";
 
 const lambert = (color: number) => new THREE.MeshLambertMaterial({ color, flatShading: true });
 export function box(w: number, h: number, d: number, color: number, x = 0, y = 0, z = 0) {
@@ -38,8 +39,17 @@ function house(b: Building) {
   const gx0 = d.x - 0.6, gx1 = d.x + 0.6, dz = d.z + (d.z === b.z ? WALL_T / 2 : -WALL_T / 2);
   wall(box(gx0 - b.x, WALL_H, WALL_T, stone, (b.x + gx0) / 2, y, dz)); wall(box(b.x + b.w - gx1, WALL_H, WALL_T, stone, (gx1 + b.x + b.w) / 2, y, dz));
   wall(box(1.2, 0.6, WALL_T, stone, d.x, WALL_H - 0.22, dz));
-  const out = d.z === b.z ? -0.13 : 0.13;
-  for (const wx of [b.x + 1.6, b.x + b.w - 1.6]) g.add(box(0.8, 0.7, 0.06, 0x1a1a22, wx, 1.5, dz + out));
+  // Windows on every wall, framed, with a cross of leading: lamplight in the Inn, daylight elsewhere. Seen from both sides.
+  const inn = b.id === "sessions", pane = inn ? 0xf0c070 : 0x9ec4e0, lit = inn ? 0xc08020 : 0x1a2c40, bz = back + (back === b.z ? WALL_T / 2 : -WALL_T / 2);
+  const win = (wx: number, wz: number, alongX: boolean) => {
+    const s = (a: number, t: number): [number, number] => (alongX ? [a, t] : [t, a]);
+    const [fw, fd] = s(0.95, WALL_T + 0.05), [gw, gd] = s(0.75, WALL_T + 0.08), [mw, md] = s(0.05, WALL_T + 0.1), [hw, hd] = s(0.75, WALL_T + 0.1), [sw, sd] = s(1.05, WALL_T + 0.16);
+    wall(box(fw, 0.85, fd, 0x5a3a1e, wx, 1.5, wz)); wall(box(sw, 0.06, sd, 0x6e6a60, wx, 1.05, wz));
+    const glass = box(gw, 0.65, gd, pane, wx, 1.5, wz); Object.assign(glass.material, { emissive: new THREE.Color(lit), emissiveIntensity: inn ? 0.55 : 0.35 }); wall(glass);
+    wall(box(mw, 0.65, md, 0x3a2412, wx, 1.5, wz)); wall(box(hw, 0.05, hd, 0x3a2412, wx, 1.5, wz));
+  };
+  for (const wx of [b.x + 1.6, b.x + b.w - 1.6]) { if (Math.abs(wx - d.x) > 1.2) win(wx, dz, true); if (!inn) win(wx, bz, true); }
+  for (const f of b.d < 8 ? [0.5] : [0.3, 0.7]) for (const wx of [b.x + WALL_T / 2, b.x + b.w - WALL_T / 2]) win(wx, b.z + b.d * f, false);
   const x0 = b.x - 0.3, x1 = b.x + b.w + 0.3, z0 = b.z - 0.45, z1 = b.z + b.d + 0.45, zm = b.z + b.d / 2, e = WALL_H + 0.08, r = e + b.d * 0.42;
   const A = [x0, e, z0], B = [x1, e, z0], C = [x1, r, zm], D = [x0, r, zm], E = [x0, e, z1], F = [x1, e, z1];
   const roof = new THREE.Group();
@@ -57,6 +67,11 @@ function house(b: Building) {
   if (thatch) tri([lerp(D, A, 0.05), lerp(C, B, 0.05), C, lerp(D, A, 0.05), C, D], 0x8a6a30);
   tri([A, E, D, B, C, F], 0x7a7468);
   const merged = merge(roof, g, true); if (merged) merged.userData.roof = true;
+  // A signpost by the door, painted in the roof's colour, to click like the house itself.
+  const [sx, sz] = signOf(b), sy = heightAt(sx, sz), sign = new THREE.Group();
+  sign.add(box(0.12, 1.7, 0.12, 0x5a3a1e, sx, sy + 0.85, sz), box(1.2, 0.56, 0.08, 0x7a5430, sx, sy + 1.55, sz), box(1.04, 0.42, 0.1, b.roof, sx, sy + 1.55, sz));
+  sign.add(box(0.7, 0.06, 0.11, 0xe8dcb0, sx, sy + 1.6, sz), box(0.5, 0.06, 0.11, 0xe8dcb0, sx, sy + 1.48, sz));
+  merge(sign, g);
   g.traverse((o) => { o.userData.target = { kind: "building", b }; });
   return g;
 }
@@ -73,6 +88,40 @@ function furniture(scene: THREE.Object3D) {
     if (f.kind === "barrel") {
       const m = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.9, 8), lambert(0x6b4a26)); m.position.set(x, 0.55, z); g.add(m);
       g.add(box(0.8, 0.06, 0.8, 0x3a3a3a, x, 0.75, z));
+    }
+    if (f.kind === "worktop") {
+      g.add(box(f.w, 0.9, f.d, 0x6b4a26, x, 0.55, z), box(f.w + 0.06, 0.06, f.d + 0.06, 0xb8a888, x, 1.03, z));
+      g.add(box(0.4, 0.04, 0.5, 0x9a7a4a, x, 1.08, z - 0.6), box(0.04, 0.03, 0.3, 0xc8ccd4, x + 0.1, 1.11, z - 0.6));
+      for (const [k, oz] of [0.3, 0.55, 0.8].entries()) g.add(box(0.14, 0.14, 0.14, [0xd84a2a, 0xe8c040, 0x5a9a3a][k], x, 1.13, z + oz));
+      const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.18, 0.28, 8), lambert(0x3a3a3e)); pot.position.set(x, 1.2, z + 1.1); g.add(pot);
+    }
+    if (f.kind === "shelfback") {
+      g.add(box(f.w, 2, f.d, 0x5a3a1e, x, 1.08, z));
+      for (let s = 0; s < 3; s++) g.add(box(f.w - 0.2, 0.36, 0.08, [0x2b4f8a, 0x7a2b2b, 0x6a5a2a][(Math.round(x) + s) % 3], x, 0.5 + s * 0.6, z - 0.2));
+    }
+    if (f.kind === "readtable") {
+      g.add(box(f.w, 0.08, f.d, 0x6b4a26, x, 0.82, z));
+      for (const [ox, oz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(box(0.1, 0.72, 0.1, 0x4a2e16, x + ox * (f.w / 2 - 0.15), 0.44, z + oz * (f.d / 2 - 0.15)));
+      g.add(box(0.5, 0.03, 0.36, 0xf2ecd8, x - 0.1, 0.88, z), box(0.02, 0.04, 0.36, 0x7a2b2b, x - 0.1, 0.89, z), box(0.3, 0.12, 0.22, 0x2b4f8a, x + 0.4, 0.92, z - 0.25), box(0.06, 0.18, 0.06, 0xf2ecd8, x + 0.42, 0.95, z + 0.3));
+      const flame = box(0.05, 0.08, 0.05, 0xffd060, x + 0.42, 1.08, z + 0.3); Object.assign(flame.material, { emissive: new THREE.Color(0xffb020), emissiveIntensity: 1 }); g.add(flame);
+      for (const oz of [-0.85, 0.85]) g.add(box(0.5, 0.5, 0.45, 0x5a3a1e, x, 0.3, z + oz));
+    }
+    if (f.kind === "desk") {
+      g.add(box(f.w, 0.85, f.d, 0x5a3a1e, x, 0.5, z), box(f.w + 0.08, 0.06, f.d + 0.08, 0x7a5430, x, 0.95, z));
+      g.add(box(0.36, 0.3, 0.26, 0x7a2b2b, x - 0.5, 1.13, z), box(0.4, 0.03, 0.3, 0xf2ecd8, x + 0.1, 1.0, z), box(0.04, 0.2, 0.04, 0x2a2a30, x + 0.5, 1.08, z));
+    }
+    if (f.kind === "vault") {
+      const door = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.12, 12), lambert(0x6a6e74)); door.rotation.x = Math.PI / 2; door.position.set(x, 1.15, z + 0.12); g.add(door);
+      g.add(box(0.7, 0.08, 0.06, 0xb89a3a, x, 1.15, z + 0.2), box(0.08, 0.7, 0.06, 0xb89a3a, x, 1.15, z + 0.2), box(0.16, 0.16, 0.08, 0x3a3a3e, x, 1.15, z + 0.24));
+    }
+    if (f.kind === "gold") {
+      g.add(box(f.w, 0.9, f.d, 0x5a5048, x, 0.53, z));
+      for (let i = 0; i < 6; i++) g.add(box(0.22, 0.1, 0.12, 0xe8c040, x - 0.6 + (i % 3) * 0.3 + (i > 2 ? 0.15 : 0), 1.03 + (i > 2 ? 0.1 : 0), z));
+    }
+    if (f.kind === "counter") {
+      // Coins in stacks on the counter, a red rug before it.
+      for (const [ox, n] of [[-2.6, 4], [-2.3, 2], [1.4, 3], [2.8, 5]]) for (let k = 0; k < n; k++) g.add(box(0.14, 0.03, 0.14, 0xe8c040, x + ox, 1.1 + k * 0.035, z));
+      g.add(box(4, 0.02, 1.6, 0x7a2020, x, 0.15, z + 1.6), box(3.6, 0.025, 1.3, 0xa83030, x, 0.16, z + 1.6));
     }
     if (f.kind === "counter") g.add(box(f.w, 1, f.d, 0x6a5a48, x, 0.58, z));
     if (f.kind === "chest") g.add(box(f.w, 0.9, f.d, 0x5a5048, x, 0.55, z), box(f.w + 0.04, 0.08, f.d + 0.04, 0xb89a3a, x, 0.9, z));
@@ -153,7 +202,7 @@ function wilderness(scene: THREE.Object3D) {
 function greenery(scene: THREE.Object3D) {
   for (let i = 0; i < 260; i++) {
     const x = 0.5 + rnd(i * 3.7 + 1) * (W - 1), z = 0.5 + rnd(i * 9.1 + 2) * (H - 1);
-    if (tileAt(x, z) !== "g" || buildingAt(x, z) || [-0.6, 0.6].some((o) => tileAt(x + o, z) !== "g" || tileAt(x, z + o) !== "g" || buildingAt(x + o, z + o))) continue;
+    if (tileAt(x, z) !== "g" || buildingAt(x, z) || nearChapel(x, z) || [-0.6, 0.6].some((o) => tileAt(x + o, z) !== "g" || tileAt(x, z + o) !== "g" || buildingAt(x + o, z + o))) continue;
     const y = heightAt(x, z);
     // Bushes only: anything smaller is a stray pixel at the client's resolution.
     if (i % 3 === 0) { const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 0), lambert(0x3f6a26)); b.position.set(x, y + 0.2, z); b.scale.y = 0.7; scene.add(b); }
@@ -186,7 +235,7 @@ function site(scene: THREE.Object3D) {
   for (let r = 0; r < 5; r++) scene.add(box(0.36, 0.26, 0.3, 0x8a8476, x + w + 1 + (r % 3) * 0.38, y + 0.13 + Math.floor(r / 3) * 0.26, z + d + 1));
 }
 
-/** The Cookout: grills on legs, coals glowing, something on each. */
+/** The Kitchen's grills: on legs, coals glowing, something on each. */
 function grills(scene: THREE.Object3D) {
   for (const [gx, gz] of GRILLS) {
     const y = heightAt(gx, gz);
@@ -225,24 +274,79 @@ function workshop(scene: THREE.Object3D) {
   }
 }
 
-/** The Chapel: a stone floor, a back wall with a coloured window, the altar with its candles, pews in rows. */
+const glow = (m: THREE.Mesh, color: number, k = 0.6) => { Object.assign(m.material, { emissive: new THREE.Color(color), emissiveIntensity: k }); return m; };
+
+/** The Chapel: stone walls with the door to the town, lancet windows down the sides, a rose window over the
+ *  altar, a red carpet up the aisle, pews either side; and beside the door a bell tower with a spire and a cross. */
 function chapel(scene: THREE.Object3D) {
-  const { x, z, w, d } = CHAPEL, stone = 0x8a8476;
-  scene.add(box(w, 0.1, d, 0x9a948a, x + w / 2, 0.13, z + d / 2));
-  scene.add(box(w, 3.2, 0.3, stone, x + w / 2, 1.6, z - 0.05), box(0.3, 2.2, d * 0.5, stone, x + 0.15, 1.1, z + d * 0.25), box(0.3, 2.2, d * 0.5, stone, x + w - 0.15, 1.1, z + d * 0.25));
-  const glass = box(1.4, 1.6, 0.06, 0x3a6ad8, ALTAR[0], 2.1, z + 0.12); Object.assign(glass.material, { emissive: new THREE.Color(0x2a4ab0), emissiveIntensity: 0.6 });
-  const glass2 = box(0.5, 0.5, 0.07, 0xd83a3a, ALTAR[0], 2.4, z + 0.13); Object.assign(glass2.material, { emissive: new THREE.Color(0xa02020), emissiveIntensity: 0.6 });
-  scene.add(glass, glass2);
-  const [ax, az] = ALTAR;
-  scene.add(box(1.6, 0.9, 0.8, 0xb8b0a0, ax, 0.6, az), box(1.7, 0.05, 0.85, 0xf2ecd8, ax, 1.07, az), box(0.12, 0.05, 0.9, 0xc8a040, ax, 1.08, az));
-  for (const cx of [ax - 0.6, ax + 0.6]) {
-    scene.add(box(0.08, 0.28, 0.08, 0xf2ecd8, cx, 1.24, az - 0.2));
-    const flame = box(0.06, 0.1, 0.06, 0xffd060, cx, 1.43, az - 0.2); Object.assign(flame.material, { emissive: new THREE.Color(0xffb020), emissiveIntensity: 1 }); scene.add(flame);
+  const { x, z, w, d, door, h } = CHAPEL, stone = 0x9a9486, trim = 0x6e6a60, t = 0.3;
+  scene.add(box(w, 0.1, d, 0xa8a296, x + w / 2, 0.13, z + d / 2), box(1.4, 0.02, d - 0.6, 0x8a2020, door, 0.19, z + d / 2));
+  // Walls, buttressed, the north one round an arched doorway.
+  scene.add(box(door - 0.8 - x, h, t, stone, (x + door - 0.8) / 2, h / 2, z + t / 2), box(x + w - door - 0.8, h, t, stone, (door + 0.8 + x + w) / 2, h / 2, z + t / 2));
+  scene.add(box(1.6, h - 2.3, t, stone, door, 2.3 + (h - 2.3) / 2, z + t / 2), box(1.9, 0.18, t + 0.08, trim, door, 2.3, z + t / 2), box(1.3, 0.3, t + 0.02, stone, door, 2.12, z + t / 2));
+  scene.add(box(t, h, d, stone, x + t / 2, h / 2, z + d / 2), box(t, h, d, stone, x + w - t / 2, h / 2, z + d / 2), box(w, h, t, stone, x + w / 2, h / 2, z + d - t / 2));
+  for (const bz of [z + 0.1, z + d / 2, z + d - 0.1]) for (const bx of [x - 0.12, x + w + 0.12]) scene.add(box(0.3, h * 0.75, 0.4, trim, bx, h * 0.375, bz));
+  // Lancet windows down both sides, in red, blue and gold.
+  const panes = [0xc83030, 0x3060d0, 0xd8a020];
+  for (const [k, wz] of [z + 1.5, z + 3, z + 4.5].entries()) for (const [wx, s] of [[x, -1], [x + w, 1]] as const) {
+    scene.add(box(t + 0.06, 1.5, 0.62, trim, wx + s * -t / 2, 1.75, wz), box(t + 0.08, 0.24, 0.36, trim, wx + s * -t / 2, 2.55, wz));
+    scene.add(glow(box(t + 0.1, 1.3, 0.44, panes[k], wx + s * -t / 2, 1.75, wz), panes[k], 0.55));
   }
+  // The rose window over the altar: a ring of colour round a gold heart.
+  const rz = z + d - t / 2;
+  scene.add(box(1.9, 1.9, t + 0.06, trim, ALTAR[0], 2.1, rz));
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; scene.add(glow(box(0.36, 0.36, t + 0.1, panes[i % 3], ALTAR[0] + Math.cos(a) * 0.6, 2.1 + Math.sin(a) * 0.6, rz), panes[i % 3], 0.6)); }
+  scene.add(glow(box(0.42, 0.42, t + 0.12, 0xf0d060, ALTAR[0], 2.1, rz), 0xe0b020, 0.8));
+  // The altar under a white cloth, a gold cross, candles.
+  const [ax, az] = ALTAR;
+  scene.add(box(1.6, 0.9, 0.8, 0xc8c0b0, ax, 0.6, az), box(1.7, 0.05, 0.85, 0xf2ecd8, ax, 1.07, az), box(0.12, 0.05, 0.9, 0xc8a040, ax, 1.08, az));
+  scene.add(box(0.08, 0.6, 0.06, 0xd8b040, ax, 1.4, az + 0.2), box(0.34, 0.08, 0.06, 0xd8b040, ax, 1.52, az + 0.2));
+  for (const cx of [ax - 0.6, ax + 0.6]) scene.add(box(0.08, 0.28, 0.08, 0xf2ecd8, cx, 1.24, az), glow(box(0.06, 0.1, 0.06, 0xffd060, cx, 1.43, az), 0xffb020, 1));
   for (const p of PEWS) {
     const px = p.x + p.w / 2, pz = p.z + p.d / 2;
-    scene.add(box(p.w, 0.08, p.d, 0x6b4a26, px, 0.55, pz), box(p.w, 0.5, 0.08, 0x6b4a26, px, 0.8, pz + p.d / 2), box(0.1, 0.5, p.d, 0x5a3a1e, p.x + 0.1, 0.3, pz), box(0.1, 0.5, p.d, 0x5a3a1e, p.x + p.w - 0.1, 0.3, pz));
+    scene.add(box(p.w, 0.08, p.d, 0x6b4a26, px, 0.55, pz), box(p.w, 0.5, 0.08, 0x6b4a26, px, 0.8, pz - p.d / 2), box(0.1, 0.5, p.d, 0x5a3a1e, p.x + 0.1, 0.3, pz), box(0.1, 0.5, p.d, 0x5a3a1e, p.x + p.w - 0.1, 0.3, pz));
   }
+  // The bell tower: a stone shaft, an open belfry with its bell, a slate spire, a gold cross.
+  const { x: tx, z: tz, s } = TOWER, cx = tx + s / 2, cz = tz + s / 2, th = 5;
+  scene.add(box(s, th, s, stone, cx, th / 2, cz), box(s + 0.12, 0.16, s + 0.12, trim, cx, th, cz), box(s + 0.12, 0.16, s + 0.12, trim, cx, 3.6, cz));
+  for (const [ox, oz, rw, rd] of [[0, s / 2, 0.6, 0.06], [0, -s / 2, 0.6, 0.06], [s / 2, 0, 0.06, 0.6], [-s / 2, 0, 0.06, 0.6]]) scene.add(box(rw, 0.9, rd, 0x1a1814, cx + ox, 4.25, cz + oz));
+  scene.add(box(0.4, 0.42, 0.4, 0xc8a040, cx, 4.15, cz), box(0.22, 0.12, 0.22, 0xc8a040, cx, 4.42, cz));
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(s * 0.78, 2.2, 4), lambert(0x4a5260)); spire.rotation.y = Math.PI / 4; spire.position.set(cx, th + 1.18, cz); scene.add(spire);
+  scene.add(box(0.1, 0.7, 0.1, 0xd8b040, cx, th + 2.6, cz), box(0.42, 0.1, 0.1, 0xd8b040, cx, th + 2.72, cz));
+  for (const k of [0, 1, 2]) scene.add(box(0.18, 0.5, 0.02, 0x2a2a30, cx, 2.6 - k * 0.7, tz - 0.01));
+}
+
+/** The Chapel's roof: steep slate, ridge running from the door to the altar. Hidden with the other roofs. */
+export function chapelRoof() {
+  const { x, z, w, d, h } = CHAPEL, roof = new THREE.Group(), ox = 0.35, x0 = x - ox, x1 = x + w + ox, xm = x + w / 2, z0 = z - 0.3, z1 = z + d + 0.3, r = h + w * 0.26;
+  const tri = (pts: number[][], color: number) => {
+    const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(pts.flat(), 3)); geo.computeVertexNormals();
+    roof.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide })));
+  };
+  tri([[x0, h, z0], [xm, r, z0], [xm, r, z1], [x0, h, z0], [xm, r, z1], [x0, h, z1]], 0x4a5260);
+  tri([[x1, h, z0], [xm, r, z1], [xm, r, z0], [x1, h, z0], [x1, h, z1], [xm, r, z1]], 0x404854);
+  tri([[x + 0.15, h, z + 0.15], [xm, r - 0.2, z + 0.15], [x + w - 0.15, h, z + 0.15], [x + 0.15, h, z + d - 0.15], [x + w - 0.15, h, z + d - 0.15], [xm, r - 0.2, z + d - 0.15]], 0x9a9486);
+  roof.add(box(0.1, 0.7, 0.1, 0xd8b040, xm, r + 0.35, z0 + 0.1), box(0.42, 0.1, 0.1, 0xd8b040, xm, r + 0.45, z0 + 0.1));
+  return roof;
+}
+
+/** The Inn's bar: panelled, with taps, mugs, and bottles on shelves along the back wall. */
+function innBar(scene: THREE.Object3D) {
+  const bar = FURNITURE.find((f) => f.kind === "bar")!, fz = bar.z, cx = bar.x + bar.w / 2;
+  for (let i = 0; i < 9; i++) scene.add(box(0.06, 0.8, 0.04, 0x3e2812, bar.x + 0.5 + i * 1, 0.52, fz - 0.02));
+  for (const [k, tx] of [cx - 1, cx, cx + 1].entries()) scene.add(box(0.08, 0.36, 0.08, 0xc8a040, tx, 1.27, fz + 0.4), box(0.06, 0.06, 0.2, 0xc8a040, tx, 1.4, fz + 0.32), box(0.05, 0.14, 0.05, [0x2a1a10, 0xb04020, 0x2050a0][k], tx, 1.52, fz + 0.4));
+  for (const mx of [bar.x + 1.2, bar.x + 2.1, bar.x + 7.3]) scene.add(box(0.14, 0.18, 0.14, 0xc89a3a, mx, 1.18, fz + 0.25));
+  const back = 37 - WALL_T - 0.12;
+  for (const sy of [1.45, 2.0]) {
+    scene.add(box(7.4, 0.06, 0.26, 0x5a3a1e, cx, sy, back));
+    for (let i = 0; i < 16; i++) scene.add(box(0.1, 0.32, 0.1, [0x2a6a3a, 0x7a2020, 0x8a6a2a, 0x3a4a8a][(i * 3 + Math.round(sy * 10)) % 4], cx - 3.5 + i * 0.47, sy + 0.19, back));
+  }
+  scene.add(box(1.4, 0.7, 0.06, 0x7a5430, cx, 2.55, back + 0.05), box(1.2, 0.5, 0.02, 0xd8c890, cx, 2.55, back));
+}
+
+/** The Kitchen's hoods over the grills, with chimneys through the roof. */
+function hoods(scene: THREE.Object3D) {
+  for (const [gx, gz] of GRILLS) scene.add(box(1.2, 0.24, 0.8, 0x4a4a4e, gx, 1.85, gz), box(0.5, 0.5, 0.4, 0x4a4a4e, gx, 2.2, gz), box(0.36, 1.6, 0.36, 0x7a5a4a, gx, 3.1, gz));
 }
 
 /** The Bonfire: a ring of stones round a stack of logs and a fire. */
@@ -255,8 +359,18 @@ function bonfire(scene: THREE.Object3D) {
   }
 }
 
+/** The Quest board: two posts, a plank board under a little roof, and a sign. The scrolls are pinned on in world.tsx. */
+function questBoard(scene: THREE.Object3D) {
+  const { x, z, w } = BOARD, y = heightAt(x, z);
+  for (const px of [x - w / 2 + 0.1, x + w / 2 - 0.1]) scene.add(box(0.16, 2.9, 0.16, 0x5a3a1e, px, y + 1.45, z));
+  scene.add(box(w - 0.1, 1.7, 0.1, 0x8a6236, x, y + 1.65, z));
+  for (let k = 0; k < 4; k++) scene.add(box(w - 0.1, 0.03, 0.12, 0x6b4a26, x, y + 0.85 + k * 0.53, z));
+  const roof = box(w + 0.4, 0.1, 0.7, 0x7a3a22, x, y + 2.95, z); roof.rotation.x = -0.25; scene.add(roof);
+  scene.add(box(1.4, 0.32, 0.06, 0xc8a86a, x, y + 2.62, z + 0.08));
+}
+
 function stations(scene: THREE.Object3D) {
-  site(scene); grills(scene); workshop(scene); chapel(scene); bonfire(scene);
+  site(scene); grills(scene); hoods(scene); workshop(scene); chapel(scene); bonfire(scene); questBoard(scene); innBar(scene);
   for (const [x, z] of ANVILS) {
     const y = heightAt(x, z);
     scene.add(box(0.5, 0.45, 0.4, 0x5a3e22, x, y + 0.22, z), box(0.95, 0.22, 0.42, 0x3a3a40, x, y + 0.56, z), box(0.3, 0.14, 0.3, 0x3a3a40, x + 0.55, y + 0.6, z));
@@ -313,6 +427,7 @@ export function buildTown() {
   for (const t of TREES) still.add(tree(t));
   fences(still); signsAndLamps(still); greenery(still); wilderness(still);
   merge(still, scene);
+  const cr = merge(chapelRoof(), scene, true); if (cr) cr.userData.roof = true;
   const roofs: THREE.Object3D[] = [], walls: THREE.Mesh[] = [];
   scene.traverse((o) => { if (o.userData.roof) roofs.push(o); if (o.userData.wall) walls.push(o as THREE.Mesh); });
   return { scene, ground, roofs, walls };
@@ -342,6 +457,52 @@ export function person(shirt: number, legs = 0x3a3a5a, seed = 0.5): Person {
   return { g, legL, legR, armL, armR };
 }
 
+/** What an agent wears for its task: an apron at the anvil, a helm and platebody for a self-review, a chef's hat at
+ *  the grill. Merged into one mesh on the body, so it moves with them. */
+export function outfit(task: AgentTask): THREE.Object3D {
+  const g = new THREE.Group(), add = (...ms: THREE.Mesh[]) => g.add(...ms);
+  const apron = (c: number) => add(box(0.44, 0.62, 0.03, c, 0, 0.82, 0.15), box(0.3, 0.2, 0.03, c, 0, 1.08, 0.15), box(0.04, 0.2, 0.03, c, -0.12, 1.24, 0.15), box(0.04, 0.2, 0.03, c, 0.12, 1.24, 0.15));
+  const brim = (c: number, w: number, y: number) => add(box(w, 0.04, w, c, 0, y, 0.02));
+  if (task === "build") { apron(0x5a3a1e); add(box(0.34, 0.08, 0.34, 0x7a2020, 0, 1.56, 0)); }
+  if (task === "fix") { apron(0x3a6a3a); brim(0x4a4a3a, 0.4, 1.57); add(box(0.32, 0.08, 0.3, 0x4a4a3a, 0, 1.62, -0.02)); }
+  if (task === "selfreview") {
+    add(box(0.54, 0.6, 0.31, 0x8a9098, 0, 0.9, 0), box(0.2, 0.22, 0.02, 0x9aa0a8, 0, 0.96, 0.16));
+    add(box(0.36, 0.4, 0.36, 0x8a9098, 0, 1.4, 0), box(0.24, 0.04, 0.02, 0x1a1a1a, 0, 1.4, 0.185), box(0.04, 0.12, 0.02, 0x1a1a1a, 0, 1.33, 0.185), box(0.06, 0.16, 0.24, 0xc8a040, 0, 1.66, 0));
+  }
+  if (task === "review") { brim(0xd8c070, 0.66, 1.56); add(box(0.32, 0.14, 0.32, 0xd8c070, 0, 1.64, 0), box(0.33, 0.04, 0.33, 0x8a2a2a, 0, 1.6, 0), box(0.5, 0.5, 0.29, 0x3a5a7a, 0, 0.88, 0)); }
+  if (task === "verify") { add(box(0.36, 0.14, 0.36, 0xb08a2a, 0, 1.6, 0), box(0.38, 0.04, 0.4, 0xb08a2a, 0, 1.53, 0.02)); const lamp = box(0.1, 0.08, 0.04, 0xfff0a0, 0, 1.6, 0.19); Object.assign(lamp.material, { emissive: new THREE.Color(0xffe060), emissiveIntensity: 1 }); add(lamp); }
+  if (task === "chart") add(box(0.38, 0.22, 0.36, 0x2f6a2f, 0, 1.58, -0.01), box(0.06, 0.34, 0.34, 0x2f6a2f, -0.18, 1.38, -0.02), box(0.06, 0.34, 0.34, 0x2f6a2f, 0.18, 1.38, -0.02), box(0.36, 0.4, 0.06, 0x2f6a2f, 0, 1.36, -0.18), box(0.5, 0.7, 0.04, 0x2f6a2f, 0, 0.95, -0.16));
+  if (task === "improve") { brim(0xe8c020, 0.42, 1.55); add(box(0.34, 0.14, 0.34, 0xe8c020, 0, 1.62, 0), box(0.52, 0.06, 0.29, 0xff8a1a, 0, 1.0, 0), box(0.52, 0.06, 0.29, 0xff8a1a, 0, 0.8, 0), box(0.06, 0.5, 0.29, 0xd8e040, -0.18, 0.9, 0), box(0.06, 0.5, 0.29, 0xd8e040, 0.18, 0.9, 0)); }
+  if (task === "grill") { apron(0xf2f2ee); add(box(0.32, 0.08, 0.32, 0xf2f2ee, 0, 1.58, 0), box(0.26, 0.26, 0.26, 0xf2f2ee, 0, 1.75, 0), box(0.36, 0.12, 0.36, 0xf2f2ee, 0, 1.9, 0)); }
+  const out = new THREE.Group(); merge(g, out); return out;
+}
+
+/** The people who keep the houses: the Inn's bartender, the Bank's teller, the Library's librarian. Each behind
+ *  their counter, facing the room. */
+export type Keeper = "bartender" | "teller" | "librarian";
+export function keeper(kind: Keeper) {
+  const g = new THREE.Group();
+  const at = (k: string) => FURNITURE.find((f) => f.kind === k)!;
+  let p: Person;
+  if (kind === "bartender") {
+    p = person(0x8a2a2a, 0x2a2a2a, 0.37);
+    g.add(box(0.44, 0.62, 0.03, 0xf2f2ee, 0, 0.82, 0.15), box(0.3, 0.2, 0.03, 0xf2f2ee, 0, 1.08, 0.15), box(0.2, 0.05, 0.03, 0x3a2a1a, 0, 1.31, 0.16), box(0.34, 0.06, 0.34, 0x3a2a1a, 0, 1.56, 0));
+    const bar = at("bar"); p.g.position.set(bar.x + bar.w / 2, 0.08, 36.5); p.g.rotation.y = Math.PI;
+  } else if (kind === "teller") {
+    // A green waistcoat over a white shirt, and a visor.
+    p = person(0xf2f2ee, 0x2a2a3a, 0.71);
+    g.add(box(0.52, 0.5, 0.29, 0x2f5a3a, 0, 0.92, 0), box(0.12, 0.5, 0.3, 0xf2f2ee, 0, 0.92, 0.01), box(0.38, 0.04, 0.2, 0x2f8a4a, 0, 1.53, 0.14), box(0.34, 0.06, 0.34, 0x2f8a4a, 0, 1.5, 0));
+    const c = at("counter"); p.g.position.set(c.x + c.w / 2, 0.08, c.z - 0.75);
+  } else {
+    // A long purple robe and spectacles.
+    p = person(0x4a2a6a, 0x4a2a6a, 0.23);
+    g.add(box(0.54, 0.9, 0.31, 0x4a2a6a, 0, 0.55, 0), box(0.24, 0.05, 0.02, 0x1a1a1a, 0, 1.39, 0.16), box(0.34, 0.12, 0.34, 0xc8c8c8, 0, 1.56, 0));
+    const d = at("desk"); p.g.position.set(d.x + d.w / 2, 0.08, d.z + d.d + 0.35); p.g.rotation.y = Math.PI;
+  }
+  merge(g, p.g);
+  return p;
+}
+
 /** What's in an agent's hand: a skill's tool, or a mug of ale. */
 export function tool(kind: Skill | "mug" | "sword" | "staff") {
   if (kind === "construction") { const g = new THREE.Group(); g.position.set(0, -0.52, 0.05); g.add(box(0.06, 0.5, 0.06, 0x8a6a3a, 0, -0.22, 0), box(0.2, 0.1, 0.1, 0x55595f, 0, -0.48, 0)); return g; }
@@ -364,7 +525,16 @@ export function tool(kind: Skill | "mug" | "sword" | "staff") {
   return g;
 }
 
-/** The arrow over a quest giver's head. */
+/** A scroll pinned to the Quest board: parchment, rolled ends, and a pin in its lane's colour. */
+export function scroll(pin: number) {
+  const g = new THREE.Group();
+  g.add(box(0.56, 0.4, 0.03, 0xeadcb0, 0, 0, 0), box(0.62, 0.06, 0.06, 0xd8c890, 0, 0.21, 0), box(0.62, 0.06, 0.06, 0xd8c890, 0, -0.21, 0));
+  for (let k = 0; k < 3; k++) g.add(box(0.36, 0.025, 0.035, 0x6a5a40, 0, 0.08 - k * 0.09, 0.01));
+  const p = box(0.08, 0.08, 0.06, pin, 0, 0.16, 0.04); Object.assign(p.material, { emissive: new THREE.Color(pin), emissiveIntensity: 0.4 }); g.add(p);
+  return g;
+}
+
+/** The arrow over the Quest board. */
 export function hintArrow(color: number) {
   const g = new THREE.Group(), mat = new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.35, flatShading: true });
   const head = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.42, 4), mat); head.rotation.x = Math.PI; g.add(head);

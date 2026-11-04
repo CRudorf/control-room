@@ -3,16 +3,18 @@
 import type { AgentTask, WorkItem } from "../../shared/types";
 import { taskOfLabel } from "../../shared/tasks";
 import { minimapDots } from "../minimap";
-import { ASKING, BURNING, CX, CZ, DUELS, PRAYING, SEATS, type Skill, type Spot, SPOTS } from "./map";
+import { ASKING, BOARD_SLOTS, BOARD_STAND, BURNING, DUELS, PRAYING, SEATS, type Skill, type Spot, SPOTS } from "./map";
 
 /** Each skill is a step of the work: where an agent stands says what step it's on. */
 export const STEP: Record<Skill, string> = { smithing: "Building", crafting: "Fixing", mining: "Testing", fishing: "Reviewing", woodcutting: "Charting", construction: "Improving", cooking: "Grilling" };
 export const VERB: Record<Skill, string> = { smithing: "Smithing at an anvil", crafting: "Crafting at the workshop", woodcutting: "Chopping a tree", fishing: "Fishing", mining: "Mining a rock", construction: "Building at the construction site", cooking: "Cooking on the grill" };
-export const AREA_STEP: Record<string, string> = { Smithy: "Building", Mine: "Testing", "Riverbank north": "Reviewing", "Riverbank south": "Reviewing", Grove: "Charting", Inn: "Resting", Wilderness: "Self-reviews", "Construction site": "Improving", Cookout: "Grilling", Workshop: "Fixing", Chapel: "Waiting on review", Bonfire: "Spent" };
+export const AREA_STEP: Record<string, string> = { Smithy: "Building", Mine: "Testing", "Riverbank north": "Reviewing", "Riverbank south": "Reviewing", Grove: "Charting", Inn: "Resting", Wilderness: "Self-reviews", "Construction site": "Improving", Kitchen: "Grilling", Workshop: "Fixing", Chapel: "Waiting on review", Bonfire: "Spent" };
 
 export type Townsfolk = {
   pane: string; label: string; status: string; item: string; itemKey: string; itemTitle: string; branch: string | null;
   skill: Skill; step: string; detail: string;
+  /** What it's for: it dresses for it. */
+  task: AgentTask;
   /** What it is: a self-review, another helper, or the session that owns the work. */
   kind: "selfreview" | "helper" | "implementer";
   /** Who its PR is waiting on for a review; null when it isn't. */
@@ -75,7 +77,7 @@ export function townsfolk(items: WorkItem[], demo: number | null = null): Townsf
     if (seen.has(a.pane)) continue;
     const task = a.task ?? taskOfLabel(a.label), st = stepOf(task, it, a.branch);
     const kind = task === "selfreview" ? "selfreview" : task === "build" || task === "fix" ? "implementer" : "helper";
-    seen.set(a.pane, { pane: a.pane, label: a.name ?? a.label, status: a.status, item: it.id, itemKey: it.key, itemTitle: it.title, branch: a.branch, skill: st.skill, step: STEP[st.skill], detail: st.detail, kind, awaiting: awaitingReview(it, a.branch), spent: a.spent?.reason ?? null, pr: prOf(it, a.branch) });
+    seen.set(a.pane, { pane: a.pane, label: a.name ?? a.label, status: a.status, item: it.id, itemKey: it.key, itemTitle: it.title, branch: a.branch, skill: st.skill, step: STEP[st.skill], detail: st.detail, task, kind, awaiting: awaitingReview(it, a.branch), spent: a.spent?.reason ?? null, pr: prOf(it, a.branch) });
   }
   const out = [...seen.values()].sort((a, b) => a.pane.localeCompare(b.pane));
   if (demo === null) return out;
@@ -123,17 +125,18 @@ export function place(folk: Townsfolk[]): Placed[] {
   });
 }
 
-export type Giver = { id: string; key: string; title: string; why: string; lane: "mine" | "asked"; x: number; z: number };
+/** An item that needs the user, as a scroll on the Quest board: `slot` is where it hangs, null when the board is full. */
+export type Giver = { id: string; key: string; title: string; why: string; lane: "mine" | "asked"; slot: number | null; x: number; z: number };
 // An item on the user's turn only because of its agents (one finished, one waiting on the user): the
 // agent itself shows that, resting in the Inn or asking in the square, so the item is no quest giver.
 const AGENT_REASON = /^agent \S+ (finished|is waiting on you)$/;
 const onlyAgents = (it: WorkItem) => it.lane === "mine" && !!it.why && it.why.split(" · ").every((r) => AGENT_REASON.test(r));
 
-/** The items that need the user, as quest givers round the fountain: nearer when more pressing. */
+/** The items that need the user, as scrolls on the Quest board in the board's order: the most pressing first. */
 export function givers(items: WorkItem[]): Giver[] {
   const byId = new Map(items.map((i) => [i.id, i]));
-  return minimapDots(items.filter((it) => !onlyAgents(it))).map((d) => {
-    const it = byId.get(d.id)!, dx = d.x - 50, dy = d.y - 50, f = Math.hypot(dx, dy) / 44, a = Math.atan2(dy, dx), r = 2.6 + f * 3.4;
-    return { id: d.id, key: it.key, title: it.title, why: it.why || it.title, lane: d.lane, x: CX + Math.cos(a) * r * 1.15, z: CZ + Math.sin(a) * r * 0.95 };
+  return minimapDots(items.filter((it) => !onlyAgents(it))).map((d, i) => {
+    const it = byId.get(d.id)!;
+    return { id: d.id, key: it.key, title: it.title, why: it.why || it.title, lane: d.lane, slot: i < BOARD_SLOTS ? i : null, x: BOARD_STAND[0], z: BOARD_STAND[1] };
   });
 }

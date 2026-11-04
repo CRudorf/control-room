@@ -74,6 +74,8 @@ PR_FIELDS = """
       ... on ReviewRequestedEvent { createdAt }
       ... on ReadyForReviewEvent { createdAt } } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  additions deletions changedFiles files(first: 100) { nodes { path additions deletions } }
+  allCommits: commits { totalCount }
 """
 
 SEARCH = """
@@ -374,7 +376,16 @@ def slim(pr, t):
             "base": pr["baseRefName"], "head": pr["headRefOid"], "id": pr["id"],
             "merge_state": pr["mergeStateStatus"], "can_merge": can_merge(pr),
             "review_decision": pr["reviewDecision"], "last_activity": last_activity(pr), "last_push": last_push(pr),
-            "waiting_since": waiting_since(pr), "merge_queue": merge_queue(pr), **t}
+            "waiting_since": waiting_since(pr), "merge_queue": merge_queue(pr), "size": size(pr), **t}
+
+
+def size(pr):
+    """Lines and files changed, with each file's lines: what the board's complexity label reads."""
+    if pr.get("additions") is None:
+        return None
+    return {"add": pr["additions"], "del": pr["deletions"], "files": pr["changedFiles"],
+            "commits": (pr.get("allCommits") or {}).get("totalCount", 0),
+            "paths": [[f["path"], f["additions"] + f["deletions"]] for f in (pr.get("files") or {}).get("nodes") or []]}
 
 
 def mine_row(pr, user, marks, adopted):

@@ -728,3 +728,41 @@ button.mtile.drillable:hover { border-color:var(--rule); }
 .skin-sw i { flex:1; }
 .seg button:disabled { opacity:.45; cursor:default; }
 .settings .seg { align-self:flex-start; }
+
+/* A session as a conversation (console.tsx). */
+.chat { flex:1 1 0; min-height:120px; overflow:auto; display:flex; flex-direction:column; gap:10px; padding:10px 12px; background:var(--rack); border:1px solid var(--rule); border-radius:4px; }
+.chat-msg { display:flex; flex-direction:column; gap:2px; max-width:92%; }
+.chat-msg.you { align-self:flex-end; align-items:flex-end; }
+.chat-msg.you .chat-body { background:var(--panel-2); border:1px solid var(--rule); border-radius:8px 8px 2px 8px; padding:6px 10px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.chat-msg.pending { opacity:.6; }
+.chat-msg.agent .chat-body { overflow-wrap:anywhere; }
+/* A reply fills the pane, narrow or expanded: the docs' reading width doesn't apply here. */
+.chat-msg.agent .chat-body .md p, .chat-msg.agent .chat-body .md ul, .chat-msg.agent .chat-body .md ol { max-width:none; }
+.chat-msg.agent .chat-body .md > :first-child { margin-top:0; } .chat-msg.agent .chat-body .md > :last-child { margin-bottom:0; }
+.chat-who { font:700 11px 'Archivo Narrow'; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-3); }
+.chat-recap { font-size:12.5px; color:var(--ink-2); border-left:3px solid var(--rule); padding:2px 8px; }
+.chat-tools { font:12px/1.4 ui-monospace, Menlo, monospace; color:var(--ink-3); }
+.chat-tools-h { all:unset; cursor:pointer; overflow-wrap:anywhere; }
+.chat-tools-h:hover { color:var(--ink-2); }
+.chat-tools ul { margin:4px 0 0 16px; padding:0; list-style:none; }
+.chat-tools li.failed { color:var(--bad); }
+.chat-working { font-size:12px; }
+.chat-dialog { border:1px solid var(--h-ask); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:8px; background:color-mix(in srgb, var(--h-ask) 8%, var(--panel)); }
+.chat-dialog-q { font-weight:700; }
+.chat-dialog-ctx { margin:0; font:12px/1.4 ui-monospace, Menlo, monospace; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--ink-2); max-height:220px; overflow:auto; }
+.chat-dialog-opts { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+.chat-dialog-opts .btn { text-align:left; justify-content:flex-start; height:auto; padding:6px 10px; white-space:normal; }
+
+/* Effort: the user's time to ship, on the strip; a review's tier and the treatments it calls for, in the detail. */
+.strip .id .effort { display:inline-block; margin-top:2px; font:700 10.5px 'Archivo Narrow'; letter-spacing:.03em; padding:0 5px; border-radius:3px; background:rgba(0,0,0,.08); color:var(--strip-ink-2); white-space:nowrap; }
+.strip .id .effort.tier-deep { background:#e8a33a; color:#1a1206; }
+.strip .id .effort.tier-critical { background:#c0392b; color:#fff; }
+.lifted .plan { display:grid; grid-template-columns:auto 1fr; column-gap:7px; row-gap:4px; align-items:baseline; }
+.lifted .plan .st { font:700 10px "Archivo Narrow"; letter-spacing:.08em; padding:1px 5px; border-radius:3px; background:rgba(0,0,0,.08); color:var(--strip-ink); }
+.lifted .plan.tier-deep .st { background:#e8a33a; color:#1a1206; }
+.lifted .plan.tier-critical .st { background:#c0392b; color:#fff; }
+.lifted .plan .txt { color:var(--strip-ink-2); min-width:0; }
+.lifted .plan .treat { grid-column:2; display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.lifted .plan .chip { font:700 11px "Archivo Narrow"; padding:2px 7px; border-radius:3px; background:rgba(0,0,0,.08); color:var(--strip-ink-2); }
+.lifted .plan .chip.done { color:var(--strip-ink); }
+.lifted .plan .chip.todo { opacity:.75; }

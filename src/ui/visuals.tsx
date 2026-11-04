@@ -46,7 +46,8 @@ const FILTERS: [Filter, string][] = [["flows", "Flows"], ["items", "Work items"]
 
 /** The Docs page's Visuals tab: filters, a key box, the grid of cards and the viewer. */
 export function VisualGrid() {
-  const { list } = useVisuals();
+  // A change that needed no chart has nothing to look at: it shows on its work item, not here.
+  const { list: all } = useVisuals(), list = all?.filter((m) => !m.reason) ?? null;
   const [on, setOn] = useState<Set<Filter>>(new Set(["flows", "items", "changes"]));
   const [key, setKey] = useState("");
   const [open, setOpen] = useState<number | null>(null);

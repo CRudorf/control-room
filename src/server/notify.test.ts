@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Agent, Feedback, PrRow } from "../shared/types";
-import { decide } from "./notify";
+import { answersFinish, decide, REPLY_MS, resume, RESUME_MS, turnEnds, turnStarts } from "./notify";
 import { applyParks, groupWorkItems } from "./workitems";
 
 const BASE = "http://127.0.0.1:4777/";
@@ -71,6 +71,54 @@ describe("notifications", () => {
     expect(r2.notes[0].body).toBe("agent bot-1 finished");
     // herdr later marking it seen (done → idle) is not a second finish.
     expect(run(rows, [{ ...finished, seq: 7 }], r2.seen).notes).toHaveLength(0);
+  });
+
+  test("a finish that answers the user's quick reply stays quiet; the next one after they walk away notifies", () => {
+    const rows = [pr({ checks: "pending", branch: "fix/x" })];
+    const chatting = agent({ status: "idle", repo: "widgets", branch: "fix/x", seq: 8, finishedSeq: 8, replied: true });
+    const r1 = run(rows, [chatting], new Set());
+    expect(r1.notes).toHaveLength(0);
+    // Still waiting on a dialog notifies, reply or not.
+    expect(run(rows, [{ ...chatting, status: "blocked", seq: 9, finishedSeq: null }], r1.seen).notes[0].body).toBe("agent bot-1 is waiting on you");
+    const alone = { ...chatting, seq: 10, finishedSeq: 10, replied: false };
+    expect(run(rows, [alone], r1.seen).notes[0].body).toBe("agent bot-1 finished");
+  });
+
+  test("a turn answers the last finish only when it starts within minutes and the user started it", () => {
+    const at = Date.parse("2030-01-01T12:00:00Z");
+    expect(answersFinish(at, at + 2 * 60_000, false)).toBe(true);
+    expect(answersFinish(at, at + REPLY_MS, false)).toBe(false);
+    // The loop, new feedback or a handoff prompting it straight after a finish.
+    expect(answersFinish(at, at + 60_000, true)).toBe(false);
+    // Its first turn, or the first since a restart.
+    expect(answersFinish(undefined, at, false)).toBe(false);
+  });
+
+  test("a quick reply stays quiet only if its turn is quick too", () => {
+    const at = Date.parse("2030-01-01T12:00:00Z");
+    const min = 60_000;
+    const reply = turnStarts({ finish: at, replied: false }, at + 2 * min, false);
+    expect(reply.replied).toBe(true);
+    expect(turnEnds(reply, at + 4 * min).replied).toBe(true);
+    // "go ahead, implement it": an hour of work, the user long gone.
+    expect(turnEnds(reply, at + 2 * min + REPLY_MS).replied).toBe(false);
+    // The board's prompt, or a first turn.
+    expect(turnEnds(turnStarts({ finish: at, replied: false }, at + min, true), at + 2 * min).replied).toBe(false);
+    expect(turnEnds(undefined, at).replied).toBe(false);
+  });
+
+  test("a quick restart picks up what was announced: no second summary, and what changed meanwhile still notifies", () => {
+    const quiet = pr({});
+    const first = run([quiet], [], null);
+    const at = Date.parse("2030-01-01T12:00:00Z");
+    const saved = { at, keys: [...first.seen] };
+    const failing = { ...quiet, checks: "failure" as const };
+    const r = run([failing], [], resume(saved, at + 30_000));
+    expect(r.notes).toHaveLength(1);
+    expect(r.notes[0].body).toBe(`CI failed on #${quiet.number}`);
+    // After a long gap, or with nothing saved, a start gets the summary.
+    expect(resume(saved, at + RESUME_MS)).toBeNull();
+    expect(resume(null, at)).toBeNull();
   });
 
   test("waiting on the author: Waiting on others, then back with a loud note when they push or comment", () => {

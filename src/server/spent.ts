@@ -21,8 +21,11 @@ export type SpentFacts = {
   now: number;
 };
 
-/** Tasks whose finish line is exact enough to close the session without asking. */
-export const AUTO = new Set<AgentTask>(["selfreview", "review", "chart", "verify", "improve"]);
+/**
+ * Tasks whose finish line is exact enough to close the session without asking. Not a review of someone
+ * else's PR: you post that review from its session's drafts, so it stays open until you close it.
+ */
+export const AUTO = new Set<AgentTask>(["selfreview", "chart", "verify", "improve"]);
 const DAY = 24 * 3600_000;
 
 /** Why a session is spent, and what it leaves, or null while its job isn't done. */
@@ -31,13 +34,15 @@ export function spentOf(f: SpentFacts): Spent | null {
   // A session at work, or waiting on the user, is never spent.
   if (a.status === "working" || a.status === "blocked") return null;
   const exact = AUTO.has(a.task);
-  if (f.done !== undefined) return { reason: "said it's done", output: f.done, exact };
   const pr = it?.prs.find((p) => p.branch === a.branch) ?? it?.prs[0];
   const ref = pr ? `${pr.repo}#${pr.number}` : null;
+  // A review is done when you've posted it, not when its drafts are: until then, it's still yours to use.
   if (a.task === "review") {
     if (!it || !it.prs.length) return { reason: "its review request is gone", output: null, exact };
     if (it.keyKind === "review" && it.lane !== "asked") return { reason: "your review is posted", output: pr?.url ?? null, exact };
+    return null;
   }
+  if (f.done !== undefined) return { reason: "said it's done", output: f.done, exact };
   if (a.task === "chart" && ref) {
     const c = f.charts.find((v) => v.pr === ref && (!f.startedAt || v.createdAt >= f.startedAt));
     if (c) return { reason: "the chart is published", output: c.url, exact };

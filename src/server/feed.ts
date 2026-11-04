@@ -7,6 +7,8 @@ import { PROJECT } from "./repos";
 // Keeps the board's PR rows fresh and tells subscribers when the board changes.
 import type { Dependency, Move, PrRow, Snapshot } from "../shared/types";
 import { prRef } from "../shared/types";
+import { complexityOf, effortOf } from "../shared/effort";
+import { lessonsFor } from "./lessons";
 import { DETECT_EVERY_MS, DEV, POLL, PRS, RECONCILE_EVERY_MS } from "./config";
 import { db, load, save } from "./db";
 import { note as record, read, write } from "./runner";
@@ -169,14 +171,11 @@ export function setDependency(ref: string, on: string | null, step: string | nul
   publish();
 }
 
-const efforts = () => new Map(db.query<{ item_key: string; effort: string }, []>("SELECT item_key, effort FROM efforts").all().map((r) => [r.item_key, r.effort]));
-
-/** Puts a work item in an effort, by its key, or takes it out with `effort` null. Local only. */
-export function setEffort(key: string, effort: string | null) {
-  if (!effort) db.query("DELETE FROM efforts WHERE item_key = ?").run(key);
-  else db.query("INSERT OR REPLACE INTO efforts (item_key, effort, set_at) VALUES (?, ?, ?)").run(key, effort, new Date().toISOString());
-  record(detail(null), effort ? "effort" : "no-effort", key, effort ? `in ${effort}` : "out of its effort");
-  publish();
+/** Each PR's complexity, from its size and the files past breaks went through, and the item's effort (shared/effort.ts). */
+function withEffort(it: WorkItem): WorkItem {
+  const prs = it.prs.map((p) => (p.size ? { ...p, complexity: complexityOf(p.size, lessonsFor(p.repo).flatMap((l) => l.files ?? [])) } : p));
+  const effort = effortOf({ prs });
+  return { ...it, prs, ...(effort ? { effort } : {}) };
 }
 
 type MoveRow = { ref: string; into_item: string | null; into_key: string | null; into_kind: string | null };
@@ -334,7 +333,6 @@ export function snapshot(): Snapshot {
   }
   const grouped = groupWorkItems(all.map(withBehind).map(withStack(all)), h.agents, holds(), reranHeads(), drafts, moves(), new Set([...shutGates(gs, done), ...running(loopsNow())]), { keyOfRef, agentMoves: agentMoves() });
   const issues = new Map([...jiraIssues(), ...trackerIssues()]);
-  const ef = efforts();
   const quiet = quietAgentsByKey(h.agents, { keyOfRef, agentMoves: agentMoves() });
   const movedOn = (run: Run, it: WorkItem) => runMovedOn(run, it, issues.get(it.key), prFacts().filter((f) => f.feature === it.key && f.merged).map((f) => f.merged!));
   const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs, parkOf, quietAgents: (k) => quiet.get(k) ?? [] }), pickedNow(), issues), gs, done), runs(), movedOn);
@@ -347,8 +345,8 @@ export function snapshot(): Snapshot {
   const waited = applyCommentWaits(applyLoop(blocked, views(blocked, loopsNow())), openWaits, issues, { branchesFor, quietAgents: (k) => quiet.get(k) ?? [] });
   const items = sortItems(rankNext(applyGuides(applyParks(waited, parks()))))
     .map((it) => {
-      const u = usageFor(it), a = artifactsFor(it), e = ef.get(it.key), c = checksFor(it.prs);
-      return { ...withTasks(withSpent(it)), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}), ...(e ? { effort: e } : {}) };
+      const u = usageFor(it), a = artifactsFor(it), c = checksFor(it.prs);
+      return { ...withEffort(withTasks(withSpent(it))), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}) };
     });
   settleRuleParks(issues, new Set(items.map((it) => it.key)));
   const today = db.query<FinishedRow, [string]>("SELECT * FROM finished WHERE at >= ? ORDER BY at").all(midnight());

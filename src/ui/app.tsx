@@ -4,12 +4,14 @@ import type { Agent, AgentTask, Cell, HandoffTask, Lane, LoopView, PrRow, Snapsh
 import { useFeed } from "./feed";
 import { act, Confirm, PrActions, RerequestSheet, Threads, toast } from "./actions";
 import { ChartButton, useVisuals, VisualStrip } from "./visuals";
+import { EffortChip, EffortLines } from "./effort";
+import { SIZE_LABEL, type EffortSize } from "../shared/effort";
 import { VerifyStrip } from "./verify";
 import { workLines } from "../shared/branches";
 import { Cleanup } from "./cleanup";
 import { StartAgent } from "./handoff";
 import { Curate, SelfReview } from "./review";
-import { EffortSheet, DependencySheet, MoveSheet, ParkSheet, Removed, RemoveSheet } from "./lists";
+import { DependencySheet, MoveSheet, ParkSheet, Removed, RemoveSheet } from "./lists";
 import { StartBox } from "./start";
 import { AskSheet, MoveJiraSheet } from "./jira";
 import { RunSheet } from "./run";
@@ -62,7 +64,7 @@ function store(k: string, v: unknown) {
   try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
 }
 
-type SheetKind = "park" | "remove" | "dependency" | "move" | "ask" | "effort";
+type SheetKind = "park" | "remove" | "dependency" | "move" | "ask";
 type Group = { key: string; title: string; lane?: Lane; collapsed?: boolean; items: (WorkItem & { _group?: string; _also?: string[] })[] };
 
 type Page = "work" | "sessions" | "finished" | "metrics" | "docs" | "tidy" | "history" | "removed" | "cleanup" | "settings" | "world";
@@ -229,11 +231,11 @@ export function App() {
         .filter((g) => g.key !== "parked" || g.items.length || laneFilter.has("parked"))
         .map((g) => (g.key === "parked" && !parkOpen && !laneFilter.has("parked") ? { ...g, collapsed: true } : g));
     if (groupBy === "effort") {
-      const by = new Map<string, Group["items"]>();
-      for (const it of visible) by.set(it.effort ?? "", [...(by.get(it.effort ?? "") ?? []), it]);
-      // Named efforts, biggest first; work in no effort last.
-      return [...by.entries()].sort(([a, x], [b, y]) => Number(!a) - Number(!b) || y.length - x.length || a.localeCompare(b))
-        .map(([e, xs]) => ({ key: `effort:${e}`, title: e || "No effort", items: xs }));
+      // The user's work to ship, smallest first; within a size, fewest points first. Items with no PR to size go last.
+      const sizes: (EffortSize | "none")[] = ["S", "M", "L", "XL", "none"];
+      return sizes.map((s) => ({ key: `effort:${s}`, title: s === "none" ? "Not sized" : SIZE_LABEL[s],
+        items: visible.filter((it) => (it.effort?.size ?? "none") === s).sort((a, b) => (a.effort?.points ?? 0) - (b.effort?.points ?? 0)) }))
+        .filter((g) => g.items.length);
     }
     const m = new Map<string, Group["items"]>();
     for (const it of visible) for (const r of it.repos) {
@@ -301,7 +303,6 @@ export function App() {
       else if (k === "w" && selected?.keyKind === "review") document.getElementById("hold-note")?.focus();
       else if (k === "f") setFocus((x) => !x);
       else if (k === "g") setGroupBy((g) => (g === "lane" ? "repo" : g === "repo" ? "effort" : "lane"));
-      else if (k === "y" && selected) setSheet({ kind: "effort", it: selected });
       else if (k === "/") qRef.current?.focus();
       else if (k >= "1" && k <= "4") toggleLane(LANES[+k - 1].k, false);
       else if (k === "p" && selected) {
@@ -420,7 +421,7 @@ export function App() {
                   batch={batch.length > 1 ? batch : []} onBatch={() => setBatchOpen(batch)}
                   onNudge={(n) => void sendNudge(n, nudgeText())}
                   onSkip={skip} onPick={setCur} suggestion={curItem || curNudge ? null : topFree} onPickup={setPicking} />
-              ) : focus ? (
+              ) : focus || wide ? (
                 <div className="minirack">
                   {groups.map((g) => (
                     <div key={g.key} style={{ display: "contents" }}>
@@ -494,7 +495,6 @@ export function App() {
         {picking && <PickupSheet s={picking} onClose={() => setPicking(null)} onDone={sugs.reload} />}
         {jiraMove && <MoveJiraSheet item={jiraMove.item} s={jiraMove.s} onClose={() => setJiraMove(null)} />}
         {sheet?.kind === "dependency" && <DependencySheet it={sheet.it} items={items} onClose={() => setSheet(null)} />}
-        {sheet?.kind === "effort" && <EffortSheet it={sheet.it} items={items} onClose={() => setSheet(null)} />}
         {sheet?.kind === "move" && <MoveSheet it={sheet.it} items={items} onClose={() => setSheet(null)} />}
         {toast && <motion.div className="toast" initial={{ y: 14, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>{toast}</motion.div>}
       </div>
@@ -514,7 +514,7 @@ const KEYS: [string, string][] = [
   ["j / k", "next / previous work item"], ["⏎", "primary action on the selected item"],
   ["1 2 3 4", "filter to My turn, Waiting on others, Asked of me, Parked"], ["0", "show all lanes"],
   ["p", "park the selected item (again to unpark)"], ["x", "remove the selected item's PRs"], ["b", "dependency a PR on another PR or a step"], ["l", "move a PR into another item, or out"], ["o", "take over someone else's PR (review requests)"], ["e", "Removed: the remove list"],
-  ["/", "filter by text"], ["g", "group by lane, repo or effort"], ["y", "put the selected item in an effort"], ["f", "focus mode"], ["z", "expand a pane to the whole work area (again, or esc, for the default view)"],
+  ["/", "filter by text"], ["g", "group by lane, repo or effort (your work to ship, in points)"], ["f", "focus mode"], ["z", "expand a pane to the whole work area (again, or esc, for the default view)"],
   ["a", "start an agent on the selected item"], ["m", "mark the selected item's feedback addressed"], ["w", "wait on the author (review requests)"], ["⌘⏎", "start it, from the agent sheet"],
   ["t", "Tidy herdr tabs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: skin and theme"], ["w", "World, under the Old School RS skin"], ["r", "refresh from GitHub now"],
   ["?", "this list"], ["esc", "back / clear filters"],
@@ -610,7 +610,7 @@ function Strip({ it, sel, unseen, onClick }: { it: Group["items"][number]; sel: 
       {unseen && <i className="tick" title="changed since you last looked" />}
       <Running kinds={runs} />
       <div className="hold" />
-      <div className="id"><b>{it.key}</b><span className="prs">{ids}</span>{it._also?.length ? <div className="also">also in {it._also.join(", ")}</div> : null}</div>
+      <div className="id"><b>{it.key}</b><span className="prs">{ids}</span><EffortChip it={it} />{it._also?.length ? <div className="also">also in {it._also.join(", ")}</div> : null}</div>
       <div className="what"><b>{it.title}</b><span className={it.lane === "mine" ? "need" : ""}>{it.why}</span></div>
       <div className="cells">
         <CellView c={it.cells.fb} /><CellView c={it.cells.ci} /><CellView c={it.cells.rv} /><CellView c={it.cells.mg} /><CellView c={it.cells.ag} />
@@ -735,6 +735,7 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
           {it.stopChecks?.map((c) => c.running ? <div key={c.branch} className="st"><i className="spin" /> Stop checks running on {c.branch} at {c.sha.slice(0, 8)}, since {new Date(c.at).toLocaleTimeString()}</div> : <div key={c.branch} className={`st ${c.ok ? "dim" : ""}`} title={c.commands.map((x) => `${x.command}: exit ${x.exit}`).join("\n")}>Stop checks {c.ok ? "passed" : "failed"} on {c.branch} at {c.sha.slice(0, 8)}: {c.commands.filter((x) => c.ok || x.exit !== 0).map((x) => `${x.command} (exit ${x.exit})`).join(", ")}</div>)}
           {it.loop && <LoopLines it={it} />}
           {it.guide && <GuideLines it={it} />}
+          <EffortLines it={it} visuals={visuals} />
           {it.artifacts && <Artifacts list={it.artifacts} />}
           {(() => { const lines = workLines([...it.agents.map((a) => a.branch), ...(it.branches ?? []).map((b) => b.name), ...it.prs.map((p) => p.branch)], flow);
             return lines.length > 1 ? <div className="loops"><div className="loopline held branches"><span className="st">BRANCHES</span><span className="txt">Work is on {lines.length} branches:<br />{lines.join(", ")}</span><span /></div></div> : null; })()}
@@ -760,7 +761,6 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
             <button className="btn on-strip" onClick={() => onSheet("remove", it)}>Remove <kbd>x</kbd></button>
             <button className="btn on-strip" onClick={() => onSheet("dependency", it)}>{it.dependencies?.some((g) => !g.opened) ? "Blocked" : "Dependency"} <kbd>b</kbd></button>
             <button className="btn on-strip" onClick={() => onSheet("move", it)}>Move <kbd>l</kbd></button>
-            <button className="btn on-strip" onClick={() => onSheet("effort", it)}>{it.effort ? `Effort: ${it.effort}` : "Effort"} <kbd>y</kbd></button>
             {it.prs.some((p) => p.role === "mine" && !p.draft) && <button className="btn on-strip" onClick={() => onSheet("ask", it)}>Ask in Slack</button>}
             {it.keyKind === "review" && <button className="btn on-strip" onClick={() => takeOver(it, it.prs[0], true)} title="You're working on it now: treat it as your PR">Take over <kbd>o</kbd></button>}
             {it.prs.filter((p) => p.taken_over).map((p) => <button key={p.number} className="btn on-strip" onClick={() => takeOver(it, p, false)}>Hand back #{p.number}</button>)}
