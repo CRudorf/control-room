@@ -8,6 +8,6 @@ export function taskOfLabel(label: string): AgentTask {
   if (/^(verify|check)\b/.test(label)) return "verify";
   if (/^chart\b/.test(label)) return "chart";
   if (/^(feedback|ci|conflicts|fixreview|fix|stack)\b/.test(label)) return "fix";
-  if (/^agent (loop|lesson|arch|stop-check)-/.test(label)) return "improve";
+  if (/^agent (loop|lesson|arch|stop-check|routine-friction)-/.test(label)) return "improve";
   return "build";
 }

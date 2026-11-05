@@ -7,7 +7,10 @@ import * as THREE from "three";
 import type { WorkItem } from "../../shared/types";
 import { AREA_STEP, type Giver, givers as giversOf, type Mode, place, type Townsfolk, townsfolk, VERB } from "./agents";
 import { AREAS, BOARD, BONFIRE, BUILDINGS, type Building, CX, CZ, doorOf, findPath, H, heightAt, rnd, signOf, slotAt, type Skill, type Spot, W, WILD_Z, Z0 } from "./map";
-import { keeper, outfit, type Bit, buildTown, burst, smoke, sparkle, hintArrow, scroll, MM, minimapImage, mmz, person, type Person, SHIRTS, tool } from "./scene";
+import { type Bit, burst, smoke, sparkle, MM, mmz, type Person } from "./scene";
+import { named, TOWN, type WorldKit } from "./kit";
+import { useRecorder } from "./record";
+import { EXTRA_WORLDS } from "../extra";
 import { type Gain, LEVEL_XP, levelOf, readXp, XP_EVENT, XP_SKILLS, type XpEvent } from "./xp";
 
 type Target = { kind: "giver"; g: Giver } | { kind: "agent"; a: Townsfolk & { area: string; mode: Mode } } | { kind: "building"; b: Building } | { kind: "ground"; x: number; z: number };
@@ -40,8 +43,17 @@ function short(path: [number, number][], from: [number, number], by: number): [n
   return [...path.slice(0, -1), [ex - ((ex - px) / d) * by, ez - ((ez - pz) / d) * by]];
 }
 
-export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, onClose }: WorldProps) {
+/** The World in the kit of the skin that's on: the town, or one a skin brings through extra.ts. */
+export default function World(props: WorldProps) {
+  const skin = document.documentElement.getAttribute("data-skin") ?? "default", load = EXTRA_WORLDS[skin];
+  const [kit, setKit] = useState<WorldKit | null>(load ? null : TOWN);
+  useEffect(() => { if (load) void load().then(setKit); }, [skin]);
+  return kit ? <WorldView {...props} kit={kit} /> : <div className="notice"><p>Loading the world…</p></div>;
+}
+
+function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit }: WorldProps & { kit: WorldKit }) {
   const view = useRef<HTMLDivElement>(null);
+  const rec = useRecorder(view);
   const mm = useRef<HTMLCanvasElement>(null);
   const chatIn = useRef<HTMLInputElement>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -50,7 +62,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
   const hoverRef = useRef<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; opts: Opt[] } | null>(null);
   const [marks, setMarks] = useState<{ id: number; x: number; y: number; red: boolean }[]>([]);
-  const [chat, setChat] = useState<Line[]>([{ t: "Welcome to the control room." }, { t: "Everyone you see is an agent. What needs you is pinned on the Quest board north of the fountain: yellow pins are your turn, red are asked of you, most pressing top left.", c: "blue" }]);
+  const [chat, setChat] = useState<Line[]>(kit.welcome);
   const say = (t: string, c?: Line["c"]) => setChat((x) => [...x.slice(-30), { t, c }]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   // The chat box keeps its newest line in view.
@@ -135,18 +147,18 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
     try { renderer = new THREE.WebGLRenderer({ antialias: false }); } catch { setNoGl(true); return; }
     renderer.setClearColor(0x000000);
     host.prepend(renderer.domElement);
-    const { scene, ground, roofs, walls } = buildTown();
-    const MAP = minimapImage();
+    const { scene, ground, roofs, walls } = kit.buildTown();
+    const MAP = kit.minimapImage();
     const bits: Bit[] = [];
 
     // You: walk a path, at running pace.
-    const me = person(0xb8b8b8, 0x4a3a2a);
+    const me = kit.person(0xb8b8b8, 0x4a3a2a);
     const pos = { x: CX + 0.5, z: CZ + 3.2, path: [] as [number, number][], then: null as null | (() => void), face: 0 };
     scene.add(me.g);
     // The Inn's bartender, wiping the bar.
     // And the Bank's teller, counting coin, and the Library's librarian, reading.
     const keepers = (["bartender", "teller", "librarian"] as const).map((k) => {
-      const p = keeper(k), b = BUILDINGS.find((x) => x.id === ({ bartender: "sessions", teller: "finished", librarian: "docs" } as const)[k])!;
+      const p = kit.keeper(k), b = BUILDINGS.find((x) => x.id === ({ bartender: "sessions", teller: "finished", librarian: "docs" } as const)[k])!;
       p.g.traverse((o) => { o.userData.target = { kind: "building", b }; });
       scene.add(p.g);
       return { k, p };
@@ -163,7 +175,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       for (const gv of pinned) {
         let s = scrolls.get(gv.id);
         if (s && s.lane !== gv.lane) { scene.remove(s.g); s = undefined; }
-        if (!s) { s = { g: scroll(gv.lane === "mine" ? 0xe8c020 : 0xd82a1a), lane: gv.lane }; scene.add(s.g); scrolls.set(gv.id, s); }
+        if (!s) { s = { g: kit.scroll(gv.lane === "mine" ? 0xe8c020 : 0xd82a1a), lane: gv.lane }; scene.add(s.g); scrolls.set(gv.id, s); }
         const [sx, sy, sz] = slotAt(gv.slot!);
         s.g.position.set(sx, boardY + sy, sz); s.g.rotation.z = (rnd(gv.id.length * 7 + gv.id.charCodeAt(0)) - 0.5) * 0.12;
         s.g.traverse((o) => { o.userData.target = { kind: "giver", g: gv }; });
@@ -171,12 +183,12 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       const lane = !giversRef.current.length ? "" : giversRef.current.some((g) => g.lane === "asked") ? "asked" : "mine";
       if (lane !== arrowLane) {
         if (arrow) scene.remove(arrow);
-        arrow = lane ? hintArrow(lane === "asked" ? 0xff2a1a : 0xffff00) : null;
+        arrow = lane ? kit.hintArrow(lane === "asked" ? 0xff2a1a : 0xffff00) : null;
         if (arrow) scene.add(arrow);
         arrowLane = lane;
       }
       const more = giversRef.current.length - pinned.length;
-      tag("board", "task", [{ t: `Quest board · ${giversRef.current.length ? `${giversRef.current.length} need you` : "nothing needs you"}${more > 0 ? `, ${more} more in the Quest List` : ""}` }], BOARD.x, boardY, BOARD.z + 0.5);
+      tag("board", "task", [{ t: `${kit.board} · ${giversRef.current.length ? `${giversRef.current.length} need you` : "nothing needs you"}${more > 0 ? `, ${more} more in the ${kit.panel.list}` : ""}` }], BOARD.x, boardY, BOARD.z + 0.5);
     };
 
     // Text over the world (names, overhead chat, task plates, area signs) is HTML at screen resolution, placed each frame.
@@ -210,7 +222,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       splats.push({ el, at: new THREE.Vector3(x + (Math.random() - 0.5) * 0.3, y, z), until: performance.now() + 1000 });
     };
     const syncAgents = () => {
-      const placed = place(folkRef.current), want = new Set(placed.map((x) => x.a.pane));
+      const placed = place(folkRef.current, kit.seats), want = new Set(placed.map((x) => x.a.pane));
       for (const [k, f] of figs) {
         if (want.has(k) || f.dying !== null) continue;
         for (const t of ["name", "chat", "task"]) untag(`${t}:${k}`);
@@ -219,7 +231,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
           const w = f.foe ? figs.get(f.foe) : null;
           f.dying = performance.now(); f.hp = 0; f.path = [];
           if (w) w.cheer = performance.now();
-          say(`${w?.label ?? "Its PR's session"} has defeated ${f.label}! The review's findings are back with ${w?.label ?? "it"}.`, "blue");
+          say(kit.fight.defeat(w?.label ?? "Its PR's session", f.label), "blue");
           continue;
         }
         scene.remove(f.p.g); dropBar(k); figs.delete(k);
@@ -228,22 +240,22 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
         let f = figs.get(a.pane);
         if (!f) {
           const seed = rnd([...a.pane].reduce((n, c) => n * 31 + c.charCodeAt(0), 7) % 9973);
-          f = { p: person(SHIRTS[Math.floor(seed * SHIRTS.length)], 0x2a2a3a, seed), held: null, heldKind: null, skill, mode, spot: s, x: s.x, z: s.z, path: [], seed, hit: 0, label: a.label, foe: null, role: null, hp: 1, dying: null, cheer: 0, task: null, dress: null };
+          f = { p: kit.person(kit.shirts[Math.floor(seed * kit.shirts.length)], 0x2a2a3a, seed), held: null, heldKind: null, skill, mode, spot: s, x: s.x, z: s.z, path: [], seed, hit: 0, label: a.label, foe: null, role: null, hp: 1, dying: null, cheer: 0, task: null, dress: null };
           scene.add(f.p.g); figs.set(a.pane, f);
         }
         // Dressed for its task.
-        if (a.task !== f.task) { if (f.dress) f.p.g.remove(f.dress); f.dress = outfit(a.task); f.p.g.add(f.dress); f.task = a.task; }
+        if (a.task !== f.task) { if (f.dress) f.p.g.remove(f.dress); f.dress = kit.outfit(a.task); f.p.g.add(f.dress); f.task = a.task; }
         if (Math.hypot(f.spot.x - s.x, f.spot.z - s.z) > 0.05) { const p = findPath(f.x, f.z, s.x, s.z); f.path = p.length ? p : [[s.x, s.z]]; }
         if (mode !== "fight" || f.mode !== "fight") f.hp = 1;
         f.spot = s; f.skill = skill; f.mode = mode; f.label = a.label; f.foe = foe ?? null; f.role = role ?? null;
         // A sword for the implementer, a staff for the self-review; tools at work, a mug at the Inn.
-        const kind = mode === "fight" ? (role === "attack" ? "sword" : "staff") : skill ?? (mode === "drink" ? "mug" : null);
-        if (kind !== f.heldKind) { if (f.held) f.p.armR.remove(f.held); f.held = kind ? tool(kind as Skill | "mug" | "sword" | "staff") : null; if (f.held) f.p.armR.add(f.held); f.heldKind = kind; }
+        const kind = mode === "fight" ? (role === "attack" ? "sword" : "staff") : skill ?? (mode === "drink" ? kit.rest.held : null);
+        if (kind !== f.heldKind) { if (f.held) f.p.armR.remove(f.held); f.held = kind ? kit.tool(kind as Skill | "mug" | "sword" | "staff") : null; if (f.held) f.p.armR.add(f.held); f.heldKind = kind; }
         const t = { kind: "agent" as const, a: { ...a, area: s.area, mode } };
         f.p.g.traverse((o) => { o.userData.target = t; });
         tag(`name:${a.pane}`, "name", [{ t: a.label }], f.x, 0, f.z);
         // A resting agent's plate shows only on hover: the Inn's sign already says they're resting.
-        const open = hoverRef.current === a.pane, doing = mode === "drink" ? "Resting" : mode === "ask" ? "Waiting on you" : mode === "fight" ? (role === "attack" ? "Fighting the review" : "Self-review") : mode === "pray" ? "Waiting on review" : mode === "burn" ? "Spent" : a.step;
+        const open = hoverRef.current === a.pane, doing = mode === "drink" ? "Resting" : mode === "ask" ? "Waiting on you" : mode === "fight" ? (role === "attack" ? kit.fight.attack : kit.fight.defend) : mode === "pray" ? "Waiting on review" : mode === "burn" ? "Spent" : a.step;
         if (mode === "drink" && !open) untag(`task:${a.pane}`);
         else tag(`task:${a.pane}`, open ? "task open" : "task", [{ t: `${a.itemKey} · ${doing}`, c: "h" },
           ...(open ? [{ t: a.itemTitle }, ...(mode === "skill" ? [{ t: `Now: ${a.detail}` }] : mode === "pray" ? [{ t: `Waiting on ${a.awaiting}` }] : mode === "burn" ? [{ t: `Done: ${a.spent}` }] : []), { t: `Agent: ${a.label}${a.branch ? ` on ${a.branch}` : ""}`, c: "dim" }] : [])], f.x, 0, f.z);
@@ -255,7 +267,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       for (const area of areasNow) if (!count.has(area)) { untag(`area:${area}`); areasNow.delete(area); }
       for (const [area, n] of count) {
         const [x, z] = AREAS[area] ?? [CX, CZ];
-        tag(`area:${area}`, "area", [{ t: area.replace(/ (north|south)$/, ""), c: "h" }, { t: `${AREA_STEP[area] ?? ""} · ${n}` }], x, Math.max(heightAt(x, z), 0) + 3.6, z);
+        tag(`area:${area}`, "area", [{ t: (kit.areas[area] ?? area).replace(/ (north|south)$/, ""), c: "h" }, { t: `${AREA_STEP[area] ?? ""} · ${n}` }], x, Math.max(heightAt(x, z), 0) + 3.6, z);
         areasNow.add(area);
       }
     };
@@ -342,7 +354,11 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
           legL.rotation.x = sw; legR.rotation.x = -sw; armL.rotation.x = -sw * 0.7; armR.rotation.x = sw * 0.7;
         } else {
           f.p.g.rotation.y = f.spot.face;
-          if (f.mode === "drink") {
+          if (f.mode === "drink" && kit.rest.pose) {
+            // A kit's own rest, and now and then its effect over them.
+            kit.rest.pose(f.p, ts, f.seed);
+            if (kit.rest.fx && Math.random() < dt * 0.5) kit.rest.fx(scene, bits, f.x, heightAt(f.x, f.z) + 1.3, f.z);
+          } else if (f.mode === "drink") {
             // The mug held at the table; every few seconds, a long pull.
             const c = (ts * 0.22 + f.seed) % 1, lift = c < 0.18 ? Math.sin((c / 0.18) * Math.PI) : 0;
             armR.rotation.x = -0.55 - lift * 2.1; armL.rotation.x = Math.sin(ts * 1.1 + f.seed * 9) * 0.05;
@@ -358,7 +374,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
               // Neither falls on hits alone: the fight ends when the findings are taken.
               foe.hp = foe.hp - dmg / 60 <= floor ? foe.hp + 0.2 : foe.hp - dmg / 60;
               splat(foe.x, heightAt(foe.x, foe.z) + 1.0, foe.z, dmg);
-              if (f.role === "defend") burst(scene, bits, foe.x, heightAt(foe.x, foe.z) + 1.1, foe.z, 0x40a0ff, 6, 0.8, true);
+              if (f.role === "defend") kit.fight.hit(scene, bits, foe.x, heightAt(foe.x, foe.z) + 1.1, foe.z);
             }
           } else if (f.mode === "burn") {
             // Kneeling at the fire, now and then feeding it a log: flames leap, smoke rises.
@@ -435,7 +451,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       // Each house's signpost names it; hovering the house or its sign says what it's for.
       for (const b of BUILDINGS) {
         const [sx, sz] = signOf(b), open = hoverRef.current === `building:${b.id}`;
-        tag(`sign:${b.id}`, open ? "task open" : "task", [{ t: b.name, c: "h" }, ...(open ? [{ t: b.does }] : [])], sx, heightAt(sx, sz) + 2.1, sz);
+        tag(`sign:${b.id}`, open ? "task open" : "task", [{ t: named(kit, b).name, c: "h" }, ...(open ? [{ t: named(kit, b).does }] : [])], sx, heightAt(sx, sz) + 2.1, sz);
       }
       if (arrow) { arrow.position.set(BOARD.x, boardY + 3.6 + Math.sin(now / 260) * 0.12, BOARD.z); arrow.rotation.y = now / 600; }
       // The hovered scroll shows its key and why it needs you.
@@ -505,7 +521,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
   const go = (x: number, z: number, then?: () => void, stopShort = 0) => { if (!api.current?.walk(x, z, then, stopShort)) say("I can't reach that!"); };
   const itemOf = (id: string) => byId.get(id);
   const talkGiver = (g: Giver) => go(g.x, g.z, () => { say(`You read the scroll for ${g.key}.`); onOpen(g.id); }, 0.9);
-  const enter = (b: Building) => { const d = doorOf(b); go(d.inside[0], d.inside[1], () => { say(`You enter the ${b.name}.`); onBuilding(b.id); }); };
+  const enter = (b: Building) => { const d = doorOf(b); go(d.inside[0], d.inside[1], () => { say(`You enter the ${named(kit, b).name}.`); onBuilding(b.id); }); };
   const greet = (a: Townsfolk) => {
     const at = api.current?.where(a.pane); if (!at) return;
     go(at[0], at[1], () => { setTalkTo(a); chatIn.current?.focus(); }, 0.9);
@@ -524,8 +540,8 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
     if (!r.error) setTimeout(() => loadSaid(a.pane), 2500);
   };
   const examine = (t: Target) => say(t.kind === "giver" ? `${t.g.key}: ${t.g.why}`
-    : t.kind === "agent" ? `${t.a.label}: ${t.a.mode === "fight" ? (t.a.kind === "selfreview" ? "holding the self-review's findings until its PR's session takes them" : "fighting its self-review for the findings") : t.a.mode === "pray" ? `praying for a review from ${t.a.awaiting}` : t.a.mode === "burn" ? `burning its logs: done, ${t.a.spent}` : t.a.mode === "ask" ? "waiting on you" : t.a.mode === "drink" ? "enjoying an ale at the Inn" : `${VERB[t.a.skill].toLowerCase()}, ${t.a.detail}`}, for ${t.a.itemKey}.`
-    : t.kind === "building" ? `${t.b.name}. ${t.b.does}.` : "Grass. It could do with a trim.");
+    : t.kind === "agent" ? `${t.a.label}: ${t.a.mode === "fight" ? (t.a.kind === "selfreview" ? kit.fight.holding : kit.fight.fighting) : t.a.mode === "pray" ? `${kit.pray} ${t.a.awaiting}` : t.a.mode === "burn" ? `${kit.burn} ${t.a.spent}` : t.a.mode === "ask" ? "waiting on you" : t.a.mode === "drink" ? kit.drink : `${(kit.verbs[t.a.skill] ?? VERB[t.a.skill]).toLowerCase()}, ${t.a.detail}`}, for ${t.a.itemKey}.`
+    : t.kind === "building" ? `${named(kit, t.b).name}. ${named(kit, t.b).does}.` : kit.ground);
   const act = (t: Target) => { if (t.kind === "giver") talkGiver(t.g); else if (t.kind === "agent") greet(t.a); else if (t.kind === "building") enter(t.b); else go(t.x, t.z); };
 
   /** The right-click menu for whatever's under the cursor: the real actions, as the board offers them. */
@@ -549,14 +565,14 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
       if (a.status !== "working") out.push({ verb: "Close-session", ...w, run: () => ask(`Close ${a.label}'s session? It can be resumed from History.`, "Yes, close it.", () => void agentAct(a, "close it", () => post("/api/agent/close", { pane: a.pane, item: a.item }), (r) => `Closed ${a.label}'s ${r.closed ?? "session"}.`)) });
       out.push({ verb: "Examine", ...w, run: () => examine(t) });
     }
-    if (t.kind === "building") out.push({ verb: "Enter", what: t.b.name, tone: "obj", run: () => enter(t.b) }, { verb: "Examine", what: t.b.name, tone: "obj", run: () => examine(t) });
+    if (t.kind === "building") out.push({ verb: "Enter", what: named(kit, t.b).name, tone: "obj", run: () => enter(t.b) }, { verb: "Examine", what: named(kit, t.b).name, tone: "obj", run: () => examine(t) });
     out.push({ verb: "Walk here", run: () => { if (ground?.kind === "ground") go(ground.x, ground.z); else if (ground) act(ground); } }, { verb: "Cancel", run: () => {} });
     return out;
   };
   const first = (t: Target | null): Opt => !t || t.kind === "ground" ? { verb: "Walk here", run: () => {} }
     : t.kind === "giver" ? { verb: "Read", what: t.g.key, tone: "obj", run: () => {} }
     : t.kind === "agent" ? { verb: "Talk-to", what: t.a.label, tone: "player", run: () => {} }
-    : { verb: "Enter", what: t.b.name, tone: "obj", run: () => {} };
+    : { verb: "Enter", what: named(kit, t.b).name, tone: "obj", run: () => {} };
   const hv = first(hover), more = hover && hover.kind !== "ground" ? options(hover, null).length - 1 : 0;
   hoverRef.current = hover?.kind === "agent" ? hover.a.pane : hover?.kind === "giver" ? `giver:${hover.g.id}` : hover?.kind === "building" ? `building:${hover.b.id}` : null;
   const totalXp = XP_SKILLS.reduce((n, k) => n + xp[k], 0), totalLevel = XP_SKILLS.reduce((n, k) => n + levelOf(xp[k]), 0);
@@ -576,7 +592,7 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
         {noGl && <div className="world-nogl">This browser can't draw the world: WebGL is off or unavailable.</div>}
         <div className="world-hover">{hv.verb}{hv.what && <> <span className={hv.tone}>{hv.what}</span></>}{more > 0 && <span className="more"> / {more} more options</span>}</div>
         <div className="world-wild" style={{ display: "none" }}><i /><span>Level: 0</span></div>
-        <div className="world-xpbox" title={`Total level ${totalLevel}`}>XP: {totalXp.toLocaleString()}</div>
+        <div className="world-xpbox" title={`${kit.panel.total} ${totalLevel}`}>{kit.panel.xp}: {totalXp.toLocaleString()}</div>
         <div className="world-drops">{drops.map((d) => <div key={d.id} className={`drop s-${d.skill.toLowerCase()}`}>+{d.xp} <span>{d.skill}</span></div>)}</div>
         {marks.map((m) => <i key={m.id} className={`world-x ${m.red ? "red" : ""}`} style={{ left: m.x, top: m.y }} />)}
         {menu && (
@@ -592,34 +608,36 @@ export default function World({ items, onOpen, onBuilding, onPrimary, onSheet, o
           <button className="world-compass" title="Face north" onClick={() => api.current?.north()}><i /></button>
         </div>
         <div className="world-tabs">
-          <button className={tab === "quests" ? "on" : ""} onClick={() => setTab("quests")}>Quests</button>
-          <button className={tab === "stats" ? "on" : ""} onClick={() => setTab("stats")}>Stats</button>
-          <button className={tab === "options" ? "on" : ""} onClick={() => setTab("options")}>Options</button>
+          <button className={tab === "quests" ? "on" : ""} onClick={() => setTab("quests")}>{kit.panel.quests}</button>
+          <button className={tab === "stats" ? "on" : ""} onClick={() => setTab("stats")}>{kit.panel.stats}</button>
+          <button className={tab === "options" ? "on" : ""} onClick={() => setTab("options")}>{kit.panel.options}</button>
         </div>
         <div className="world-panel">
           {tab === "quests" && <>
-            <h4>Quest List</h4>
+            <h4>{kit.panel.list}</h4>
             {givers.length + asking.length === 0 && <div className="none">Nothing needs you.</div>}
             {givers.map((g) => <button key={g.id} className={g.lane} title={g.why} onClick={() => talkGiver(g)}>{g.key}</button>)}
             {asking.map((a) => <button key={a.pane} className="asked" title={`${a.label} is waiting on you, for ${a.itemKey}`} onClick={() => greet(a)}>{a.label}</button>)}
           </>}
           {tab === "stats" && <>
+            {kit.panel.statsTitle && <h4>{kit.panel.statsTitle}</h4>}
             <div className="world-stats">
               {XP_SKILLS.map((k) => {
                 const l = levelOf(xp[k]), next = l < 99 ? LEVEL_XP[l + 1] - xp[k] : 0;
-                return <div key={k} className={`stat s-${k.toLowerCase()}`} title={`${k} XP: ${xp[k].toLocaleString()}${l < 99 ? `\nNext level at: ${LEVEL_XP[l + 1].toLocaleString()}\nRemaining XP: ${next.toLocaleString()}` : ""}`}>
+                return <div key={k} className={`stat s-${k.toLowerCase()}`} style={{ ["--fill" as string]: `${Math.round((l / 99) * 100)}%` }} title={`${k} ${kit.panel.xp}: ${xp[k].toLocaleString()}${l < 99 ? `\nNext level at: ${LEVEL_XP[l + 1].toLocaleString()}\nRemaining XP: ${next.toLocaleString()}` : ""}`}>
                   <i /><span className="n">{k}</span><span className="lv">{l}<small>/{l}</small></span>
                 </div>;
               })}
             </div>
-            <div className="world-total">Total level: {totalLevel}</div>
-            <div className="world-how">XP comes from the board: CI passing, approvals and answered threads, agents finishing, and work shipping.</div>
+            <div className="world-total">{kit.panel.total}: {totalLevel}</div>
+            <div className="world-how">{kit.panel.how}</div>
           </>}
           {tab === "options" && <div className="world-opts">
             <button className={opts.names ? "on" : ""} onClick={() => flip("names")}>Display names: {opts.names ? "on" : "off"}</button>
             <button className={opts.hideRoofs ? "on" : ""} onClick={() => flip("hideRoofs")}>Roofs: {opts.hideRoofs ? "hidden" : "shown"}</button>
             <button className={opts.overlays ? "on" : ""} onClick={() => flip("overlays")}>Task overlays: {opts.overlays ? "on" : "off"}</button>
             <button className={opts.demo ? "on" : ""} title="Most agents at work, a few in the Inn, one waiting on you, reshuffled every 20 seconds. Nothing you do reaches the real agents." onClick={() => flip("demo")}>Demo, a busy town: {opts.demo ? "on" : "off"}</button>
+            <button className={rec.recording ? "on" : ""} title="Record the World to a video file to send to someone: Chrome asks which tab to share (this one), and it downloads when you stop." onClick={() => rec.recording ? rec.stop() : void rec.start().catch((e) => say(`Couldn't record: ${(e as Error).message}`, "red"))}>{rec.recording ? `Stop recording · ${rec.clock}` : "Record a video"}</button>
           </div>}
         </div>
         <button className="world-close" onClick={onClose}>Close <kbd>esc</kbd></button>

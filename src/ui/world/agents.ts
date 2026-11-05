@@ -84,14 +84,14 @@ export function townsfolk(items: WorkItem[], demo: number | null = null): Townsf
   return out.flatMap((a, i) => {
     const [skill, detail] = DEMO[(i + demo) % DEMO.length];
     // Every fifth a self-review of the one before; on alternate ticks its findings are taken and it's gone.
-    if (i % 5 === 1) return (demo + i) % 2 ? [{ ...a, kind: "selfreview" as const, item: out[i - 1].item, itemKey: out[i - 1].itemKey, itemTitle: out[i - 1].itemTitle, status: "working", skill: "fishing" as Skill, step: STEP.fishing, detail: "reviewing the change" }] : [];
+    if (i % 5 === 1) return (demo + i) % 2 ? [{ ...a, kind: "selfreview" as const, task: "selfreview" as const, item: out[i - 1].item, itemKey: out[i - 1].itemKey, itemTitle: out[i - 1].itemTitle, status: "working", skill: "fishing" as Skill, step: STEP.fishing, detail: "reviewing the change" }] : [];
     return [{ ...a, kind: i % 5 === 0 ? "implementer" as const : a.kind, status: i % 7 === 6 ? "blocked" : (i + demo) % 5 === 0 ? "idle" : "working", skill, step: STEP[skill], detail }];
   });
 }
 
 /** Where every agent goes: a working one to a free spot of its step (or the next skill with room), one
  *  waiting on the user to the square, the rest to a seat in the Inn. */
-export function place(folk: Townsfolk[]): Placed[] {
+export function place(folk: Townsfolk[], seats: Spot[] = SEATS): Placed[] {
   const free = Object.fromEntries(Object.entries(SPOTS).map(([k, v]) => [k, [...v]])) as Record<Skill, Spot[]>;
   const order: Skill[] = ["smithing", "crafting", "woodcutting", "fishing", "mining", "construction", "cooking"];
   let seat = 0, ask = 0, ring = 0, pray = 0, burn = 0;
@@ -120,7 +120,7 @@ export function place(folk: Townsfolk[]): Placed[] {
     if (a.spent && burn < BURNING.length) return { a, mode: "burn", skill: null, s: BURNING[burn++] };
     // Not working, and its PR is out for someone's review: it prays, while there's room before the altar.
     if (a.awaiting && pray < PRAYING.length) return { a, mode: "pray", skill: null, s: PRAYING[pray++] };
-    const s = SEATS[seat % SEATS.length], lap = Math.floor(seat++ / SEATS.length) * 0.35;
+    const s = seats[seat % seats.length], lap = Math.floor(seat++ / seats.length) * 0.35;
     return { a, mode: "drink", skill: null, s: { ...s, x: s.x + lap, z: s.z - lap } };
   });
 }

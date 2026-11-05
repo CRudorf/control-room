@@ -18,6 +18,7 @@ import { recordEvent } from "./events";
 import { historySyncedAt, METRICS_FROM, prFacts, startHistory, syncHistory } from "./history";
 import { features, friction, quality, stageTimes, weekly, type Event } from "./metrics";
 import { loopState, runLoop, startLoop, setPulse } from "./loop";
+import { latestReport } from "./friction";
 import { deleteRoutine, idleSeconds, routineRuns, routines, runRoutine, saveRoutine, startRoutines, START_HOUR } from "./routines";
 import { localRepos, repoInProject } from "./repos";
 import { closedTabs, closeTabs, history, listTabs } from "./tidy";
@@ -427,7 +428,7 @@ const server = Bun.serve({
       return Response.json({ ok: true });
     }) },
     "/api/routines": {
-      GET: api(() => Response.json({ routines: routines(), runs: routineRuns(), repos: localRepos().filter((n) => repoInProject(n)), idle: idleSeconds(), startHour: START_HOUR, loop: loopState().last,
+      GET: api(() => Response.json({ routines: routines(), runs: routineRuns(), repos: localRepos().filter((n) => repoInProject(n)), idle: idleSeconds(), startHour: START_HOUR, loop: loopState().last, friction: latestReport(),
         // Where each agent a run started is now, by name: its pane, status and workspace, while herdr has it.
         live: Object.fromEntries(herdrState().agents.filter((a) => a.name).map((a) => [a.name!, { pane: a.pane, status: a.status, workspace: a.workspaceLabel }])) })),
       POST: api(async (req) => {
@@ -440,6 +441,11 @@ const server = Bun.serve({
         } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
       }),
     },
+    // The friction review's newest report, as the page it is.
+    "/friction": { GET: api(() => {
+      const r = latestReport();
+      return r ? new Response(Bun.file(r.path), { headers: { "content-type": "text/html; charset=utf-8" } }) : new Response("No friction review yet.", { status: 404 });
+    }) },
     "/api/loop": {
       GET: api(() => Response.json(loopState())),
       POST: api(async () => {

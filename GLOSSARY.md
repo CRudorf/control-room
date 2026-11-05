@@ -26,6 +26,8 @@
 
 **Routine**: A prompt the control room starts on its own in each of its repos, daily or weekly: at a set time, or when the user starts work (the first time that day they're at the machine). With no prompt it runs `/signal-to-pr` bare, a triage of the repo's live errors. Set on the Routines page.
 
+**Friction review**: The routine every control room starts with, weekly on Friday when the user starts work. Its agent reads every session tied to a work item, with how each item moved on the board, and reports candidates that would take friction out of a work item's workflow, one card each the way an architecture review does. It changes nothing; the user picks one to explore. Avoid: retro.
+
 **Complexity points**: A deterministic score of how hard a PR is to review, from its size, spread, sensitive paths, commits and files that broke before (ADR 0006). The points set its **review tier**.
 
 **Review tier**: Light, standard, deep or critical: how thoroughly to check a review request. Each tier names its **treatments**.

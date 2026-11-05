@@ -2,10 +2,11 @@
 // at a set local time, or when the user starts work: the first time that day they're at the machine
 // (keyboard or mouse in the last two minutes, after 5am). A routine with no prompt runs /signal-to-pr bare,
 // which triages the repo's live errors into a menu. Each run is once per day or week; a failed start
-// tries again half an hour later.
+// tries again half an hour later. Every control room starts with the weekly friction review (friction.ts).
 import { execFileSync } from "node:child_process";
 import { DEV } from "./config";
 import { load, save } from "./db";
+import { DEFAULT_ROUTINES, writeBrief } from "./friction";
 import { startAgent } from "./handoff";
 import { note } from "./runner";
 import { weekOf } from "../shared/week";
@@ -46,7 +47,15 @@ export function idleSeconds(): number | null {
   } catch { return null; }
 }
 
-export const routines = () => load<Routine[]>("routines") ?? [];
+/** The routines, with any default not yet added once. A deleted default stays deleted. */
+export function routines(): Routine[] {
+  const have = load<Routine[]>("routines") ?? [], seeded = load<string[]>("routines_seeded") ?? [];
+  const fresh = DEFAULT_ROUTINES.filter((d) => !seeded.includes(d.id) && !have.some((r) => r.id === d.id));
+  if (!fresh.length) return have;
+  save("routines", [...have, ...fresh]);
+  save("routines_seeded", [...seeded, ...fresh.map((d) => d.id)]);
+  return [...have, ...fresh];
+}
 export const routineRuns = () => load<Record<string, RoutineRun>>("routine_runs") ?? {};
 
 const ID = /^[a-z0-9-]{1,40}$/;
@@ -59,7 +68,7 @@ export function saveRoutine(r: Routine): Routine {
   if (r.when !== "start" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(r.when)) throw new Error("the time is HH:MM");
   if (r.cadence === "weekly" && !(r.weekday >= 1 && r.weekday <= 5)) throw new Error("the weekday is Monday to Friday");
   const clean: Routine = { id: r.id, name: r.name.trim(), prompt: r.prompt.trim(), repos: [...new Set(r.repos)], cadence: r.cadence, weekday: r.weekday,
-    weekdaysOnly: !!r.weekdaysOnly, when: r.when, enabled: !!r.enabled };
+    weekdaysOnly: !!r.weekdaysOnly, when: r.when, enabled: !!r.enabled, ...(r.brief === "sessions" ? { brief: r.brief } : {}) };
   save("routines", [...routines().filter((x) => x.id !== r.id), clean]);
   return clean;
 }
@@ -85,9 +94,12 @@ export async function runRoutine(id: string, trigger: "schedule" | "routines pag
 async function startRun(r: Routine, trigger: string) {
   const at = new Date().toISOString(), period = periodOf(r, new Date());
   const agents: RoutineRun["agents"] = [], errors: string[] = [];
-  for (const repo of r.repos) {
+  let prompt = r.prompt || "/signal-to-pr";
+  try { if (r.brief === "sessions") prompt += writeBrief(); }
+  catch (e) { errors.push(`the session index: ${(e as Error).message}`); }
+  for (const repo of errors.length ? [] : r.repos) {
     try {
-      const a = await startAgent({ item: `routine-${r.id}-${repo}`, repo, pr: null, kind: "custom", prompt: r.prompt || "/signal-to-pr", edited: false });
+      const a = await startAgent({ item: `routine-${r.id}-${repo}`, repo, pr: null, kind: "custom", prompt, edited: false });
       agents.push({ repo, name: a.name, dryRun: "dryRun" in a });
     } catch (e) { errors.push(`${repo}: ${(e as Error).message}`); }
   }

@@ -122,6 +122,36 @@ function keyer(turns: Turn[]) {
   };
 }
 
+/** A session the board ties to a work item, for the friction review: when it ran, how long, and where its transcript is. */
+export type TrackedSession = { session: string; item: string; repo: string | null; from: string; to: string; turns: number; transcript: string | null };
+
+/**
+ * Sessions grouped from their turns, with the work item each went by. Sessions that never left a trunk,
+ * or ran outside a repo, aren't tied to a work item and are left out. Pure.
+ */
+export function sessionsOf(turns: Turn[], keyOf: (t: Turn) => { key: string; repo: string | null }, transcriptOf: (session: string) => string | null): TrackedSession[] {
+  const by = new Map<string, TrackedSession>();
+  for (const t of turns) {
+    const s = by.get(t.session);
+    if (s) { s.to = t.at; s.turns++; continue; }
+    by.set(t.session, { session: t.session, item: "", repo: null, from: t.at, to: t.at, turns: 1, transcript: transcriptOf(t.session) });
+  }
+  // The item a session went by is its last turn's: a session starts on a trunk and moves to its branch.
+  const last = new Map(turns.map((t) => [t.session, t]));
+  return [...by.values()].flatMap((s) => {
+    const { key, repo } = keyOf(last.get(s.session)!);
+    if (key.startsWith("outside a repo") || (repo && key.startsWith(`${repo}:`))) return [];
+    return [{ ...s, item: key, repo }];
+  });
+}
+
+/** Every tracked session since `from`, oldest first. */
+export function trackedSessions(from: string): TrackedSession[] {
+  const turns = db.query<Turn, [string]>("SELECT * FROM usage_turns WHERE at >= ? ORDER BY at").all(from);
+  const files = new Map(db.query<{ path: string }, []>("SELECT path FROM usage_files").all().map((r) => [basename(r.path, ".jsonl"), r.path]));
+  return sessionsOf(turns, keyer(turns), (s) => files.get(s) ?? null);
+}
+
 export const coeffs = (): UsageCoeffs => ({ ...DEFAULT_COEFFS, ...(load<UsageCoeffs>("usage_coeffs") ?? {}) });
 export function setCoeffs(c: Partial<UsageCoeffs>) {
   const next = { ...coeffs(), ...Object.fromEntries(Object.entries(c).filter(([, v]) => typeof v === "number" && v >= 0)) };

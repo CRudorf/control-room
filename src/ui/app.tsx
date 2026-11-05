@@ -145,7 +145,8 @@ export function App() {
     else { runPrimary(it); done?.(); }
   }, []);
   const [theme, setTheme] = useState<Theme>(() => stored("cr-theme", "system"));
-  const [skin, setSkin] = useState<SkinId>(() => WORLD_LINK ? "osrs" : skinOf(stored("cr-skin", "default")).id);
+  // A ?world link keeps your skin when it has a World, else wears Old School RS for that tab.
+  const [skin, setSkin] = useState<SkinId>(() => { const s = skinOf(stored("cr-skin", "default")); return WORLD_LINK && !s.world ? "osrs" : s.id; });
   const [seen, setSeen] = useState<Record<string, string> | null>(() => stored("cr-seen", null));
   const qRef = useRef<HTMLInputElement>(null);
 

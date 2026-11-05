@@ -1,8 +1,10 @@
 // Skins: a whole look for the board, chosen on the Settings page. A skin is one stylesheet keyed on
 // <html data-skin="<id>"> (src/ui/skins/<id>.css, linked from index.html), plus what it adds to the page.
 // The default skin has no stylesheet: it's styles.css, with the light and dark themes.
+import { EXTRA_SKINS } from "./extra";
 
-export type SkinId = "default" | "osrs";
+/** A built-in skin, or one src/ui/extra.ts adds. */
+export type SkinId = string;
 
 export type Skin = {
   id: SkinId;
@@ -24,6 +26,7 @@ export const SKINS: Skin[] = [
   { id: "default", name: "Default", blurb: "Flight strips on a rack, light or dark.", themed: true, minimap: false, world: false, fonts: [], swatch: ["#dbe2ea", "#f2dcab", "#b6e0d7", "#f6c3b4"] },
   { id: "osrs", name: "Old School RS", blurb: "Stone, parchment and a minimap, after the 2007 game client.", themed: false, minimap: true, world: true,
     fonts: ["https://fonts.googleapis.com/css2?family=Pixelify+Sans&display=swap"], swatch: ["#4b4032", "#d3c4a0", "#ffff00", "#ff981f"] },
+  ...EXTRA_SKINS,
 ];
 
 export const skinOf = (id: string): Skin => SKINS.find((s) => s.id === id) ?? SKINS[0];

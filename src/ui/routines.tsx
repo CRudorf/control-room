@@ -1,6 +1,6 @@
 // Routines: prompts the control room starts on its own, daily or weekly, when the user starts work or at a
-// set time (server/routines.ts). Each can run now, pause, change or go. The weekly improvement loop shows
-// here too, with its own Run now.
+// set time (server/routines.ts). Each can run now, pause, change or go. The friction review is one by
+// default, with a link to its newest report. The weekly improvement loop shows here too, with its own Run now.
 import { useEffect, useState } from "react";
 import type { Routine, RoutineRun } from "../shared/types";
 import { post, toast } from "./actions";
@@ -10,7 +10,7 @@ const blank = (): Routine => ({ id: "", name: "", prompt: "", repos: [], cadence
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
 type Live = Record<string, { pane: string; status: string; workspace: string }>;
-type State = { routines: Routine[]; runs: Record<string, RoutineRun>; repos: string[]; idle: number | null; startHour: number; loop: { week: string; at: string; agent: string | null; error: string | null } | null; live: Live };
+type State = { routines: Routine[]; runs: Record<string, RoutineRun>; repos: string[]; idle: number | null; startHour: number; loop: { week: string; at: string; agent: string | null; error: string | null } | null; live: Live; friction: { path: string; at: string } | null };
 
 const STATUS: Record<string, string> = { working: "working", blocked: "waiting on you", done: "finished", idle: "idle", unknown: "open" };
 
@@ -122,7 +122,13 @@ export function Routines({ onClose }: { onClose: () => void }) {
           <div key={r.id} className={`routine ${r.enabled ? "" : "paused"}`}>
             <div className="routine-h"><b>{r.name}</b>{!r.enabled && <span className="st warn">paused</span>}<span className="st dim">{r.repos.join(", ")}</span></div>
             <div className="st">{whenText(r, s.startHour)}</div>
-            <div className="routine-prompt">{r.prompt || <span className="dim">/signal-to-pr, no signal: triage the live Sentry errors</span>}</div>
+            {r.brief === "sessions"
+              ? <div className="routine-prompt">
+                  <span className="dim">Reads every session tied to a work item, with how each item moved on the board, and suggests what would take friction out of the workflow, one card per candidate.</span>
+                  <details><summary className="st dim">Prompt</summary>{r.prompt}</details>
+                  {s.friction && <a className="btn sm" href="/friction" target="_blank" rel="noreferrer">Open the latest report ({new Date(s.friction.at).toLocaleDateString()})</a>}
+                </div>
+              : <div className="routine-prompt">{r.prompt || <span className="dim">/signal-to-pr, no signal: triage the live Sentry errors</span>}</div>}
             <div className={`st ${s.runs[r.id]?.error ? "pen" : "dim"}`}>{runText(s.runs[r.id])}</div>
             <RunAgents names={s.runs[r.id]?.agents.filter((a) => !a.dryRun).map((a) => a.name) ?? []} live={s.live} />
             <div className="row-acts">

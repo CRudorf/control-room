@@ -20,8 +20,8 @@ export function taskForStart(req: StartLike): AgentTask {
   if (req.kind === "selfreview") return "selfreview";
   if (req.kind === "review") return "review";
   if (["feedback", "ci", "conflicts", "fixreview", "stack"].includes(req.kind)) return "fix";
-  // The weekly loop, lessons made to stick, architecture reviews and Stop-check hooks improve how work is done.
-  if (/^(loop|lesson|arch|stop-check)-/.test(req.item)) return "improve";
+  // The weekly loop, lessons made to stick, architecture and friction reviews, and Stop-check hooks improve how work is done.
+  if (/^(loop|lesson|arch|stop-check|routine-friction)-/.test(req.item)) return "improve";
   return "build";
 }
 

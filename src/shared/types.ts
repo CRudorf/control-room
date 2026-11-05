@@ -142,6 +142,8 @@ export type Routine = {
   /** "start": the first time that day the user is at the machine; else a local time, "HH:MM". */
   when: string;
   enabled: boolean;
+  /** What the control room writes before the agent starts, for the prompt to read. "sessions": the friction review's session index. */
+  brief?: "sessions";
 };
 export type RoutineRun = { period: string; at: string; trigger: string; agents: { repo: string; name: string; dryRun: boolean }[]; error: string | null };
 

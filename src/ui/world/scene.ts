@@ -3,21 +3,21 @@
 import * as THREE from "three";
 import type { AgentTask } from "../../shared/types";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { ALTAR, ANVILS, BOARD, BONFIRE, CHAPEL, nearChapel, KITCHEN, nearKitchen, signOf, TOWER, GRILLS, PEWS, SITE, WORKSHOP, BUILDINGS, type Building, buildingAt, CX, CZ, doorOf, ROWS, WILD_SIGN, Z0, FENCES, FURNACE, FURNITURE, H, heightAt, HV, LAMPS, ROCKS, rnd, SIGNS, type Skill, type Tile, tileAt, TILES, type Tree, TREES, W, WALL_H, WALL_T } from "./map";
+import { ALTAR, ANVILS, BOARD, BONFIRE, CHAPEL, nearChapel, KITCHEN, nearKitchen, signOf, TOWER, GRILLS, PEWS, SITE, WORKSHOP, BUILDINGS, type Building, buildingAt, type Rect, CX, CZ, doorOf, ROWS, WILD_SIGN, Z0, FENCES, FURNACE, FURNITURE, H, heightAt, HV, LAMPS, ROCKS, rnd, SIGNS, type Skill, type Tile, tileAt, TILES, type Tree, TREES, W, WALL_H, WALL_T } from "./map";
 
-const lambert = (color: number) => new THREE.MeshLambertMaterial({ color, flatShading: true });
+export const lambert = (color: number) => new THREE.MeshLambertMaterial({ color, flatShading: true });
 export function box(w: number, h: number, d: number, color: number, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lambert(color)); m.position.set(x, y, z); return m;
 }
 
-const TILE_RGB: Record<Tile, [number, number, number]> = { g: [0.24, 0.46, 0.1], p: [0.47, 0.37, 0.24], s: [0.52, 0.5, 0.45], w: [0.36, 0.33, 0.22], k: [0.2, 0.19, 0.12], d: [0.12, 0.09, 0.06] };
-function terrain() {
+export const TILE_RGB: Record<Tile, [number, number, number]> = { g: [0.24, 0.46, 0.1], p: [0.47, 0.37, 0.24], s: [0.52, 0.5, 0.45], w: [0.36, 0.33, 0.22], k: [0.2, 0.19, 0.12], d: [0.12, 0.09, 0.06] };
+export function terrain(tileRgb: Record<Tile, [number, number, number]> = TILE_RGB) {
   const pos: number[] = [], col: number[] = [], idx: number[] = [];
   for (let z = Z0; z <= H; z++) for (let x = 0; x <= W; x++) {
     pos.push(x, HV[(z - Z0) * (W + 1) + x], z);
     // A corner's colour is its four tiles' average, so ground colours blend the way the client's do.
     const c = [0, 0, 0];
-    for (const [dx, dz] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) { const t = TILE_RGB[tileAt(x + dx, z + dz)]; for (let i = 0; i < 3; i++) c[i] += t[i] / 4; }
+    for (const [dx, dz] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) { const t = tileRgb[tileAt(x + dx, z + dz)]; for (let i = 0; i < 3; i++) c[i] += t[i] / 4; }
     const j = (rnd(x * 131 + z * 17) - 0.5) * 0.07;
     col.push(c[0] + j, c[1] + j * 1.4, c[2] + j);
   }
@@ -29,44 +29,53 @@ function terrain() {
   return new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
 }
 
+/** How a house looks, for a world kit that builds its own: wall stone, floor, window glass and its glow, a roof
+ *  builder in place of the gable, and walls of its own in place of the stone ones and their windows (the walking
+ *  grid's walls stay where they are). Leave it out for the town's. */
+export type HouseLook = { stone: number; floor: number; pane: number; lit: number; roof: (b: Building) => THREE.Group; walls?: (b: Building, wall: (m: THREE.Mesh) => void) => void };
 /** A house: plank floor, stone walls with a doorway, windows, and a gable roof (hidden with Hide roofs). */
-function house(b: Building) {
-  const g = new THREE.Group(), stone = 0x8a8476, y = WALL_H / 2 + 0.08, d = doorOf(b), back = d.z === b.z ? b.z + b.d : b.z;
+export function house(b: Building, look?: HouseLook) {
+  const g = new THREE.Group(), stone = look?.stone ?? 0x8a8476, y = WALL_H / 2 + 0.08, d = doorOf(b), back = d.z === b.z ? b.z + b.d : b.z;
   const wall = (m: THREE.Mesh) => { m.userData.wall = true; g.add(m); };
-  g.add(box(b.w - WALL_T * 2 + 0.02, 0.06, b.d - WALL_T * 2 + 0.02, 0x6b4a2a, b.x + b.w / 2, 0.11, b.z + b.d / 2));
-  wall(box(WALL_T, WALL_H, b.d, stone, b.x + WALL_T / 2, y, b.z + b.d / 2)); wall(box(WALL_T, WALL_H, b.d, stone, b.x + b.w - WALL_T / 2, y, b.z + b.d / 2));
-  wall(box(b.w, WALL_H, WALL_T, stone, b.x + b.w / 2, y, back + (back === b.z ? WALL_T / 2 : -WALL_T / 2)));
-  const gx0 = d.x - 0.6, gx1 = d.x + 0.6, dz = d.z + (d.z === b.z ? WALL_T / 2 : -WALL_T / 2);
-  wall(box(gx0 - b.x, WALL_H, WALL_T, stone, (b.x + gx0) / 2, y, dz)); wall(box(b.x + b.w - gx1, WALL_H, WALL_T, stone, (gx1 + b.x + b.w) / 2, y, dz));
-  wall(box(1.2, 0.6, WALL_T, stone, d.x, WALL_H - 0.22, dz));
-  // Windows on every wall, framed, with a cross of leading: lamplight in the Inn, daylight elsewhere. Seen from both sides.
-  const inn = b.id === "sessions", pane = inn ? 0xf0c070 : 0x9ec4e0, lit = inn ? 0xc08020 : 0x1a2c40, bz = back + (back === b.z ? WALL_T / 2 : -WALL_T / 2);
-  const win = (wx: number, wz: number, alongX: boolean) => {
-    const s = (a: number, t: number): [number, number] => (alongX ? [a, t] : [t, a]);
-    const [fw, fd] = s(0.95, WALL_T + 0.05), [gw, gd] = s(0.75, WALL_T + 0.08), [mw, md] = s(0.05, WALL_T + 0.1), [hw, hd] = s(0.75, WALL_T + 0.1), [sw, sd] = s(1.05, WALL_T + 0.16);
-    wall(box(fw, 0.85, fd, 0x5a3a1e, wx, 1.5, wz)); wall(box(sw, 0.06, sd, 0x6e6a60, wx, 1.05, wz));
-    const glass = box(gw, 0.65, gd, pane, wx, 1.5, wz); Object.assign(glass.material, { emissive: new THREE.Color(lit), emissiveIntensity: inn ? 0.55 : 0.35 }); wall(glass);
-    wall(box(mw, 0.65, md, 0x3a2412, wx, 1.5, wz)); wall(box(hw, 0.05, hd, 0x3a2412, wx, 1.5, wz));
-  };
-  for (const wx of [b.x + 1.6, b.x + b.w - 1.6]) { if (Math.abs(wx - d.x) > 1.2) win(wx, dz, true); if (!inn) win(wx, bz, true); }
-  for (const f of b.d < 8 ? [0.5] : [0.3, 0.7]) for (const wx of [b.x + WALL_T / 2, b.x + b.w - WALL_T / 2]) win(wx, b.z + b.d * f, false);
-  if (b.id === "next") questHallWalls(b, wall);
+  g.add(box(b.w - WALL_T * 2 + 0.02, 0.06, b.d - WALL_T * 2 + 0.02, look?.floor ?? 0x6b4a2a, b.x + b.w / 2, 0.11, b.z + b.d / 2));
+  if (look?.walls) look.walls(b, wall);
+  else {
+    wall(box(WALL_T, WALL_H, b.d, stone, b.x + WALL_T / 2, y, b.z + b.d / 2)); wall(box(WALL_T, WALL_H, b.d, stone, b.x + b.w - WALL_T / 2, y, b.z + b.d / 2));
+    wall(box(b.w, WALL_H, WALL_T, stone, b.x + b.w / 2, y, back + (back === b.z ? WALL_T / 2 : -WALL_T / 2)));
+    const gx0 = d.x - 0.6, gx1 = d.x + 0.6, dz = d.z + (d.z === b.z ? WALL_T / 2 : -WALL_T / 2);
+    wall(box(gx0 - b.x, WALL_H, WALL_T, stone, (b.x + gx0) / 2, y, dz)); wall(box(b.x + b.w - gx1, WALL_H, WALL_T, stone, (gx1 + b.x + b.w) / 2, y, dz));
+    wall(box(1.2, 0.6, WALL_T, stone, d.x, WALL_H - 0.22, dz));
+    // Windows on every wall, framed, with a cross of leading: lamplight in the Inn, daylight elsewhere. Seen from both sides.
+    const inn = b.id === "sessions", pane = look?.pane ?? (inn ? 0xf0c070 : 0x9ec4e0), lit = look?.lit ?? (inn ? 0xc08020 : 0x1a2c40), bz = back + (back === b.z ? WALL_T / 2 : -WALL_T / 2);
+    const win = (wx: number, wz: number, alongX: boolean) => {
+      const s = (a: number, t: number): [number, number] => (alongX ? [a, t] : [t, a]);
+      const [fw, fd] = s(0.95, WALL_T + 0.05), [gw, gd] = s(0.75, WALL_T + 0.08), [mw, md] = s(0.05, WALL_T + 0.1), [hw, hd] = s(0.75, WALL_T + 0.1), [sw, sd] = s(1.05, WALL_T + 0.16);
+      wall(box(fw, 0.85, fd, 0x5a3a1e, wx, 1.5, wz)); wall(box(sw, 0.06, sd, 0x6e6a60, wx, 1.05, wz));
+      const glass = box(gw, 0.65, gd, pane, wx, 1.5, wz); Object.assign(glass.material, { emissive: new THREE.Color(lit), emissiveIntensity: inn ? 0.55 : 0.35 }); wall(glass);
+      wall(box(mw, 0.65, md, 0x3a2412, wx, 1.5, wz)); wall(box(hw, 0.05, hd, 0x3a2412, wx, 1.5, wz));
+    };
+    for (const wx of [b.x + 1.6, b.x + b.w - 1.6]) { if (Math.abs(wx - d.x) > 1.2) win(wx, dz, true); if (!inn) win(wx, bz, true); }
+    for (const f of b.d < 8 ? [0.5] : [0.3, 0.7]) for (const wx of [b.x + WALL_T / 2, b.x + b.w - WALL_T / 2]) win(wx, b.z + b.d * f, false);
+    if (b.id === "next") questHallWalls(b, wall);
+  }
   const x0 = b.x - 0.3, x1 = b.x + b.w + 0.3, z0 = b.z - 0.45, z1 = b.z + b.d + 0.45, zm = b.z + b.d / 2, e = WALL_H + 0.08, r = e + b.d * 0.42;
   const A = [x0, e, z0], B = [x1, e, z0], C = [x1, r, zm], D = [x0, r, zm], E = [x0, e, z1], F = [x1, e, z1];
-  const roof = new THREE.Group();
-  const tri = (pts: number[][], color: number) => {
-    const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(pts.flat(), 3)); geo.computeVertexNormals();
-    roof.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color })));
-  };
-  // Each slope in rows from eave to ridge, alternately shaded: tiles, or thatch on the Inn.
-  const thatch = b.id === "sessions", base = new THREE.Color(thatch ? 0xc4a050 : b.roof), rows = thatch ? 7 : 5;
-  const lerp = (p: number[], q: number[], t: number) => p.map((v, i) => v + (q[i] - v) * t);
-  for (const [e1, e2, r2, r1] of [[A, B, C, D], [F, E, D, C]]) for (let k = 0; k < rows; k++) {
-    const a1 = lerp(e1, r1, k / rows), a2 = lerp(e2, r2, k / rows), b1 = lerp(e1, r1, (k + 1) / rows), b2 = lerp(e2, r2, (k + 1) / rows);
-    tri([a1, b2, a2, a1, b1, b2], base.clone().multiplyScalar(k % 2 ? 0.86 : 1).getHex());
+  const roof = look ? look.roof(b) : new THREE.Group();
+  if (!look) {
+    const tri = (pts: number[][], color: number) => {
+      const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(pts.flat(), 3)); geo.computeVertexNormals();
+      roof.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color })));
+    };
+    // Each slope in rows from eave to ridge, alternately shaded: tiles, or thatch on the Inn.
+    const thatch = b.id === "sessions", base = new THREE.Color(thatch ? 0xc4a050 : b.roof), rows = thatch ? 7 : 5;
+    const lerp = (p: number[], q: number[], t: number) => p.map((v, i) => v + (q[i] - v) * t);
+    for (const [e1, e2, r2, r1] of [[A, B, C, D], [F, E, D, C]]) for (let k = 0; k < rows; k++) {
+      const a1 = lerp(e1, r1, k / rows), a2 = lerp(e2, r2, k / rows), b1 = lerp(e1, r1, (k + 1) / rows), b2 = lerp(e2, r2, (k + 1) / rows);
+      tri([a1, b2, a2, a1, b1, b2], base.clone().multiplyScalar(k % 2 ? 0.86 : 1).getHex());
+    }
+    if (thatch) tri([lerp(D, A, 0.05), lerp(C, B, 0.05), C, lerp(D, A, 0.05), C, D], 0x8a6a30);
+    tri([A, E, D, B, C, F], 0x7a7468);
   }
-  if (thatch) tri([lerp(D, A, 0.05), lerp(C, B, 0.05), C, lerp(D, A, 0.05), C, D], 0x8a6a30);
-  tri([A, E, D, B, C, F], 0x7a7468);
   const merged = merge(roof, g, true); if (merged) merged.userData.roof = true;
   // A signpost by the door, painted in the roof's colour, to click like the house itself.
   const [sx, sz] = signOf(b), sy = heightAt(sx, sz), sign = new THREE.Group();
@@ -102,8 +111,10 @@ function questHallWalls(b: Building, wall: (m: THREE.Mesh) => void) {
   }
 }
 
-function furniture(scene: THREE.Object3D) {
+/** The furniture, but for what `skip` leaves out, such as a world kit drawing its own in their place. */
+export function furniture(scene: THREE.Object3D, skip?: (f: Rect) => boolean) {
   for (const f of FURNITURE) {
+    if (skip?.(f)) continue;
     const x = f.x + f.w / 2, z = f.z + f.d / 2, g = new THREE.Group();
     if (f.kind === "table") {
       g.add(box(f.w, 0.08, f.d, 0x7a5430, x, 0.82, z));
@@ -211,7 +222,7 @@ export function tree({ x, z, s, kind }: Tree) {
 }
 
 /** Wooden fences: a post every so often, two rails between. */
-function fences(scene: THREE.Object3D) {
+export function fences(scene: THREE.Object3D) {
   for (const [x1, z1, x2, z2] of FENCES) {
     const len = Math.hypot(x2 - x1, z2 - z1), n = Math.max(1, Math.round(len / 1.3)), ang = Math.atan2(x2 - x1, z2 - z1);
     for (let i = 0; i <= n; i++) { const x = x1 + ((x2 - x1) * i) / n, z = z1 + ((z2 - z1) * i) / n; scene.add(box(0.14, 0.9, 0.14, 0x5a3e22, x, heightAt(x, z) + 0.45, z)); }
@@ -250,7 +261,7 @@ function wilderness(scene: THREE.Object3D) {
 }
 
 /** Bushes on the grass, out of everyone's way. */
-function greenery(scene: THREE.Object3D) {
+export function greenery(scene: THREE.Object3D) {
   for (let i = 0; i < 260; i++) {
     const x = 0.5 + rnd(i * 3.7 + 1) * (W - 1), z = 0.5 + rnd(i * 9.1 + 2) * (H - 1);
     if (tileAt(x, z) !== "g" || buildingAt(x, z) || nearChapel(x, z) || nearKitchen(x, z) || [-0.6, 0.6].some((o) => tileAt(x + o, z) !== "g" || tileAt(x, z + o) !== "g" || buildingAt(x + o, z + o))) continue;
@@ -325,11 +336,11 @@ function workshop(scene: THREE.Object3D) {
   }
 }
 
-const glow = (m: THREE.Mesh, color: number, k = 0.6) => { Object.assign(m.material, { emissive: new THREE.Color(color), emissiveIntensity: k }); return m; };
+export const glow = (m: THREE.Mesh, color: number, k = 0.6) => { Object.assign(m.material, { emissive: new THREE.Color(color), emissiveIntensity: k }); return m; };
 
 /** The Chapel: stone walls with the door to the town, lancet windows down the sides, a rose window over the
  *  altar, a red carpet up the aisle, pews either side; and beside the door a bell tower with a spire and a cross. */
-function chapel(scene: THREE.Object3D) {
+export function chapel(scene: THREE.Object3D) {
   const { x, z, w, d, door, h } = CHAPEL, stone = 0x9a9486, trim = 0x6e6a60, t = 0.3;
   scene.add(box(w, 0.1, d, 0xa8a296, x + w / 2, 0.13, z + d / 2), box(1.4, 0.02, d - 0.6, 0x8a2020, door, 0.19, z + d / 2));
   // Walls, buttressed, the north one round an arched doorway.
@@ -382,7 +393,7 @@ export function chapelRoof() {
 }
 
 /** The Inn's bar: panelled, with taps, mugs, and bottles on shelves along the back wall. */
-function innBar(scene: THREE.Object3D) {
+export function innBar(scene: THREE.Object3D) {
   const bar = FURNITURE.find((f) => f.kind === "bar")!, fz = bar.z, cx = bar.x + bar.w / 2;
   for (let i = 0; i < 9; i++) scene.add(box(0.06, 0.8, 0.04, 0x3e2812, bar.x + 0.5 + i * 1, 0.52, fz - 0.02));
   for (const [k, tx] of [cx - 1, cx, cx + 1].entries()) scene.add(box(0.08, 0.36, 0.08, 0xc8a040, tx, 1.27, fz + 0.4), box(0.06, 0.06, 0.2, 0xc8a040, tx, 1.4, fz + 0.32), box(0.05, 0.14, 0.05, [0x2a1a10, 0xb04020, 0x2050a0][k], tx, 1.52, fz + 0.4));
@@ -402,7 +413,7 @@ function hoods(scene: THREE.Object3D) {
 
 /** The Kitchen: a flagstone floor, stone walls west, east and back, open to the north between oak posts under a
  *  beam, pans on a rail, a chimney breast up the back wall. Its roof is kitchenRoof, hidden with the others. */
-function kitchen(scene: THREE.Object3D) {
+export function kitchen(scene: THREE.Object3D) {
   const { x, z, w, d, h } = KITCHEN, stone = 0x8a8476, oak = 0x5a3a1e, t = 0.3;
   scene.add(box(w, 0.08, d, 0x9a948a, x + w / 2, 0.12, z + d / 2));
   for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) if ((i + j) % 2) scene.add(box(w / 6 - 0.04, 0.02, d / 4 - 0.04, 0x8a847a, x + (i + 0.5) * (w / 6), 0.17, z + (j + 0.5) * (d / 4)));
@@ -475,7 +486,7 @@ function stations(scene: THREE.Object3D) {
 const PAINTED = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 const PAINTED_BOTH = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide });
 /** A group's meshes as one, coloured per vertex: one draw call instead of many. Glowing parts stay apart. */
-function merge(group: THREE.Object3D, into: THREE.Object3D, both = false): THREE.Mesh | null {
+export function merge(group: THREE.Object3D, into: THREE.Object3D, both = false): THREE.Mesh | null {
   group.updateMatrixWorld(true);
   const parts: THREE.BufferGeometry[] = [];
   group.traverse((o) => {
@@ -496,6 +507,42 @@ function merge(group: THREE.Object3D, into: THREE.Object3D, both = false): THREE
   into.add(out); return out;
 }
 
+/** Ripples on water: light rings and streaks on a tile, drawn once, for a texture that repeats and drifts. */
+function ripples(color: number, light: number) {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d")!, hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
+  g.fillStyle = hex(color); g.fillRect(0, 0, 64, 64);
+  g.strokeStyle = hex(light); g.lineWidth = 3; g.globalAlpha = 0.85;
+  for (let i = 0; i < 7; i++) { const x = rnd(i * 3.1) * 64, y = rnd(i * 7.7) * 64, w = 6 + rnd(i * 5.3) * 12; g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y); g.stroke(); g.beginPath(); g.moveTo(x - 64, y); g.lineTo(x - 64 + w, y); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter;
+  return t;
+}
+
+/** The river's water: a sheet under the whole map, its ripples drifting downstream as it draws. */
+export function river(color: number, light: number) {
+  const tex = ripples(color, light); tex.repeat.set(W / 2, ROWS / 2);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(W, ROWS), new THREE.MeshLambertMaterial({ map: tex, transparent: true, opacity: 0.88 }));
+  water.rotation.x = -Math.PI / 2; water.position.set(W / 2, -0.4, (Z0 + H) / 2);
+  water.onBeforeRender = () => { const s = performance.now() / 1000; tex.offset.set(s * 0.04, s * 0.11); };
+  return water;
+}
+
+/** A fountain's moving water: the pool's surface turning slowly with ripples on it, and drops arcing from the spout.
+ *  `slow` for something thicker than water. */
+export function fountainWater(x: number, z: number, radius: number, sides: number, color: number, light: number, drop: number, slow = 1) {
+  const g = new THREE.Group(), tex = ripples(color, light); tex.repeat.set(2, 2);
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(radius, sides), new THREE.MeshLambertMaterial({ map: tex }));
+  pool.rotation.x = -Math.PI / 2; pool.position.set(x, 0.62, z); g.add(pool);
+  const drops = Array.from({ length: 10 }, (_, i) => { const m = box(0.08, 0.1, 0.08, drop, x, 1.6, z); g.add(m); return { m, a: (i / 10) * Math.PI * 2, p: i / 10 }; });
+  pool.onBeforeRender = () => {
+    const s = performance.now() / 1000 / slow;
+    tex.offset.set(s * 0.05, s * 0.03); pool.rotation.z = s * 0.15;
+    // Each drop leaves the spout, arcs out and falls into the pool, then starts again.
+    for (const d of drops) { const t = (s * 0.7 + d.p) % 1; d.m.position.set(x + Math.cos(d.a) * t * radius * 0.7, 1.65 + t * 0.5 - t * t * 1.4, z + Math.sin(d.a) * t * radius * 0.7); }
+  };
+  return g;
+}
+
 /** The whole town: ground, water, houses, furniture, the fountain, trees, work stations, light and fog. */
 export function buildTown() {
   const scene = new THREE.Scene();
@@ -503,8 +550,7 @@ export function buildTown() {
   scene.add(new THREE.AmbientLight(0xffffff, 0.95));
   const sun = new THREE.DirectionalLight(0xffffff, 1.25); sun.position.set(-12, 20, 8); scene.add(sun);
   const ground = terrain(); scene.add(ground);
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(W, ROWS), new THREE.MeshLambertMaterial({ color: 0x2f5fa8, transparent: true, opacity: 0.85 }));
-  water.rotation.x = -Math.PI / 2; water.position.set(W / 2, -0.4, (Z0 + H) / 2); scene.add(water);
+  scene.add(river(0x2f5fa8, 0x8ab4e8));
   for (const b of BUILDINGS) scene.add(house(b));
   const still = new THREE.Group();
   furniture(still);
@@ -512,6 +558,7 @@ export function buildTown() {
   const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.75, 0.5, 10), lambert(0x77736a)); basin.position.set(CX, 0.33, CZ); still.add(basin);
   const pool = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.35, 0.52, 10), lambert(0x3f7fd0)); pool.position.set(CX, 0.35, CZ); still.add(pool);
   const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.4, 6), lambert(0x77736a)); spout.position.set(CX, 0.9, CZ); still.add(spout);
+  scene.add(fountainWater(CX, CZ, 1.33, 10, 0x3f7fd0, 0xa8d0ff, 0xbfe0ff));
   for (const t of TREES) still.add(tree(t));
   fences(still); signsAndLamps(still); greenery(still); wilderness(still);
   merge(still, scene);
