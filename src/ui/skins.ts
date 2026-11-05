@@ -26,6 +26,8 @@ export const SKINS: Skin[] = [
   { id: "default", name: "Default", blurb: "Flight strips on a rack, light or dark.", themed: true, minimap: false, world: false, fonts: [], swatch: ["#dbe2ea", "#f2dcab", "#b6e0d7", "#f6c3b4"] },
   { id: "osrs", name: "Old School RS", blurb: "Stone, parchment and a minimap, after the 2007 game client.", themed: false, minimap: true, world: true,
     fonts: ["https://fonts.googleapis.com/css2?family=Pixelify+Sans&display=swap"], swatch: ["#4b4032", "#d3c4a0", "#ffff00", "#ff981f"] },
+  { id: "wasteland", name: "Wasteland", blurb: "Green phosphor on a dead terminal, and a World of scrap shacks under a dust-orange sky, drawn sharp with shadows and firelight.", themed: false, minimap: false, world: true,
+    fonts: ["https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap"], swatch: ["#0c110b", "#5dff7a", "#b4835a", "#ffa040"] },
   ...EXTRA_SKINS,
 ];
 

@@ -123,11 +123,21 @@ export function closedTabs(limit = 50) {
 }
 
 /** Everything the control room has recorded, newest first. */
-export function history(limit = 200) {
-  return db.query<{ at: string; work_item: string | null; action: string; trigger: string | null; sent: string | null; result: string | null; detail: string | null; dry_run: number }, [number]>(
-    "SELECT at, work_item, action, trigger, sent, result, detail, dry_run FROM action_records ORDER BY id DESC LIMIT ?").all(limit)
-    .map((r) => ({
-      at: r.at, item: r.work_item, action: r.action, trigger: r.trigger, label: r.sent, result: r.result, dryRun: !!r.dry_run,
+/**
+ * A page of the action record, newest first: `limit` records older than id `before`, of one action or all.
+ * With every action there is and how many of each, so a filter reaches the whole record, not just this page.
+ */
+export function history({ before = null, action = null, limit = 200 }: { before?: number | null; action?: string | null; limit?: number } = {}) {
+  const rows = db.query<{ id: number; at: string; work_item: string | null; action: string; trigger: string | null; sent: string | null; result: string | null; detail: string | null; dry_run: number }, [number, string | null, number]>(
+    "SELECT id, at, work_item, action, trigger, sent, result, detail, dry_run FROM action_records WHERE id < ?1 AND (?2 IS NULL OR action = ?2) ORDER BY id DESC LIMIT ?3")
+    .all(before ?? Number.MAX_SAFE_INTEGER, action, limit);
+  const kinds = db.query<{ action: string; n: number }, []>("SELECT action, count(*) AS n FROM action_records GROUP BY action ORDER BY n DESC").all();
+  return {
+    entries: rows.map((r) => ({
+      id: r.id, at: r.at, item: r.work_item, action: r.action, trigger: r.trigger, label: r.sent, result: r.result, dryRun: !!r.dry_run,
       resume: (r.detail ? (JSON.parse(r.detail).resume ?? []) : []) as string[],
-    }));
+    })),
+    kinds,
+    total: kinds.reduce((n, k) => n + k.n, 0),
+  };
 }

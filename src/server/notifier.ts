@@ -17,9 +17,13 @@ const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 // second summary, and nothing that happened while it was down is lost.
 let seen: Set<string> | null = resume(load<Announced>("announced"), Date.now());
 
+let lastDone: Record<string, number> = load<Record<string, number>>("last_done") ?? {};
+
 export function announce(items: WorkItem[]) {
-  const r = decide(items, seen, BASE);
+  const r = decide(items, seen, BASE, { now: Date.now(), lastDone });
   seen = r.seen;
+  lastDone = r.lastDone ?? lastDone;
+  save("last_done", lastDone);
   save("announced", { at: Date.now(), keys: [...seen] } satisfies Announced);
   for (const n of r.notes) send(n);
 }

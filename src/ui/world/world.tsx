@@ -4,6 +4,12 @@
 // board never carries Three.js.
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { WorkItem } from "../../shared/types";
 import { AREA_STEP, type Giver, givers as giversOf, type Mode, place, type Townsfolk, townsfolk, VERB } from "./agents";
 import { AREAS, BOARD, BONFIRE, BUILDINGS, type Building, CX, CZ, doorOf, findPath, H, heightAt, rnd, signOf, slotAt, type Skill, type Spot, W, WILD_Z, Z0 } from "./map";
@@ -43,9 +49,14 @@ function short(path: [number, number][], from: [number, number], by: number): [n
   return [...path.slice(0, -1), [ex - ((ex - px) / d) * by, ez - ((ez - pz) / d) * by]];
 }
 
-/** The World in the kit of the skin that's on: the town, or one a skin brings through extra.ts. */
+/** Built-in skins' own kits, loaded when their World opens. */
+const WORLDS: Partial<Record<string, () => Promise<WorldKit>>> = {
+  wasteland: () => import("./wasteland").then((m) => m.loadWasteland()),
+};
+
+/** The World in the kit of the skin that's on: the town, a built-in skin's own, or one a skin brings through extra.ts. */
 export default function World(props: WorldProps) {
-  const skin = document.documentElement.getAttribute("data-skin") ?? "default", load = EXTRA_WORLDS[skin];
+  const skin = document.documentElement.getAttribute("data-skin") ?? "default", load = WORLDS[skin] ?? EXTRA_WORLDS[skin];
   const [kit, setKit] = useState<WorldKit | null>(load ? null : TOWN);
   useEffect(() => { if (load) void load().then(setKit); }, [skin]);
   return kit ? <WorldView {...props} kit={kit} /> : <div className="notice"><p>Loading the world…</p></div>;
@@ -144,8 +155,11 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
   useEffect(() => {
     const host = view.current!;
     let renderer: THREE.WebGLRenderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: false }); } catch { setNoGl(true); return; }
+    const look = kit.render ?? {};
+    try { renderer = new THREE.WebGLRenderer({ antialias: !!look.sharp }); } catch { setNoGl(true); return; }
     renderer.setClearColor(0x000000);
+    if (look.shadows) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
+    if (look.exposure) { renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = look.exposure; }
     host.prepend(renderer.domElement);
     const { scene, ground, roofs, walls } = kit.buildTown();
     const MAP = kit.minimapImage();
@@ -244,13 +258,13 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
           scene.add(f.p.g); figs.set(a.pane, f);
         }
         // Dressed for its task.
-        if (a.task !== f.task) { if (f.dress) f.p.g.remove(f.dress); f.dress = kit.outfit(a.task); f.p.g.add(f.dress); f.task = a.task; }
+        if (a.task !== f.task) { const on = f.p.head ?? f.p.g; if (f.dress) f.dress.removeFromParent(); f.dress = kit.outfit(a.task); on.add(f.dress); f.task = a.task; }
         if (Math.hypot(f.spot.x - s.x, f.spot.z - s.z) > 0.05) { const p = findPath(f.x, f.z, s.x, s.z); f.path = p.length ? p : [[s.x, s.z]]; }
         if (mode !== "fight" || f.mode !== "fight") f.hp = 1;
         f.spot = s; f.skill = skill; f.mode = mode; f.label = a.label; f.foe = foe ?? null; f.role = role ?? null;
         // A sword for the implementer, a staff for the self-review; tools at work, a mug at the Inn.
         const kind = mode === "fight" ? (role === "attack" ? "sword" : "staff") : skill ?? (mode === "drink" ? kit.rest.held : null);
-        if (kind !== f.heldKind) { if (f.held) f.p.armR.remove(f.held); f.held = kind ? kit.tool(kind as Skill | "mug" | "sword" | "staff") : null; if (f.held) f.p.armR.add(f.held); f.heldKind = kind; }
+        if (kind !== f.heldKind) { if (f.held) f.held.removeFromParent(); f.held = kind ? kit.tool(kind as Skill | "mug" | "sword" | "staff") : null; if (f.held) (f.p.hand ?? f.p.armR).add(f.held); f.heldKind = kind; }
         const t = { kind: "agent" as const, a: { ...a, area: s.area, mode } };
         f.p.g.traverse((o) => { o.userData.target = t; });
         tag(`name:${a.pane}`, "name", [{ t: a.label }], f.x, 0, f.z);
@@ -274,6 +288,20 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
 
     // Camera: yaw and pitch round you, turned with the arrow keys or middle-drag, zoomed with the wheel.
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+    // A kit that asks for it: light from a studio's surroundings, then the frame drawn through passes that shade
+    // creases (ambient occlusion), let bright lights glow (bloom) and tone map at the end.
+    if (look.environment) {
+      const pm = new THREE.PMREMGenerator(renderer);
+      scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = look.environment; pm.dispose();
+    }
+    let composer: EffectComposer | null = null;
+    if (look.ao || look.bloom) {
+      composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType }));
+      composer.addPass(new RenderPass(scene, camera));
+      if (look.ao) { const ao = new GTAOPass(scene, camera, 1, 1); ao.updateGtaoMaterial({ radius: 0.6, distanceFallOff: 1, thickness: 1 }); ao.blendIntensity = 0.9; composer.addPass(ao); }
+      if (look.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), look.bloom, 0.5, 0.9));
+      composer.addPass(new OutputPass());
+    }
     const cam = { yaw: 0.6, pitch: 0.82, dist: 17 };
     const keys = new Set<string>();
     const kd = (e: KeyboardEvent) => { if (e.key.startsWith("Arrow") && document.activeElement !== chatIn.current) { keys.add(e.key); e.preventDefault(); } };
@@ -286,10 +314,13 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
     const pm = (e: PointerEvent) => { if (!drag) return; cam.yaw -= (e.clientX - drag.x) * 0.008; cam.pitch = Math.max(0.45, Math.min(1.35, cam.pitch + (e.clientY - drag.y) * 0.006)); drag = { x: e.clientX, y: e.clientY }; };
     const pu = () => { drag = null; };
     host.addEventListener("pointerdown", pd); window.addEventListener("pointermove", pm); window.addEventListener("pointerup", pu);
-    // Rendered small and scaled up, for the client's chunky pixels.
+    // Rendered small and scaled up, for the client's chunky pixels, unless the kit draws sharp.
     const size = () => {
-      const w = host.clientWidth, h = host.clientHeight, s = Math.min(1, 760 / Math.max(1, w));
-      renderer.setPixelRatio(1); renderer.setSize(Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)), false);
+      const w = host.clientWidth, h = host.clientHeight, s = look.sharp ? 1 : Math.min(1, 760 / Math.max(1, w));
+      // Post passes cost per pixel, so a composed frame stops short of a retina screen's full density.
+      const pr = look.sharp ? Math.min(composer ? 1 : 2, window.devicePixelRatio || 1) : 1;
+      renderer.setPixelRatio(pr); renderer.setSize(Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)), false);
+      if (composer) { composer.setPixelRatio(pr); composer.setSize(Math.max(1, w), Math.max(1, h)); }
       camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
     };
     const ro = new ResizeObserver(size); ro.observe(host); size();
@@ -335,7 +366,7 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
         if (f.dying !== null) {
           // Defeated: falls back, lies a moment, sinks away.
           const t = (now - f.dying) / 1000, gy = heightAt(f.x, f.z);
-          f.p.g.rotation.x = -Math.min(1, t / 0.5) * (Math.PI / 2);
+          if (f.p.act) f.p.act("die", dt); else f.p.g.rotation.x = -Math.min(1, t / 0.5) * (Math.PI / 2);
           f.p.g.position.set(f.x, gy + 0.15 - Math.max(0, t - 1.6) * 0.6, f.z);
           bar(pane, 0, f.x, gy + 1.0, f.z);
           if (t > 2.6) { scene.remove(f.p.g); dropBar(pane); figs.delete(pane); }
@@ -413,8 +444,11 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
             if (f.skill === "cooking") { if (Math.random() < dt * 3) smoke(scene, bits, ax, ay + 1.05, az); if (n !== f.hit && ph > 0.97) { f.hit = n; burst(scene, bits, ax, ay + 1.0, az, 0xff8a20, 4, 0.6, true); } }
           }
         }
+        // A rigged person plays the clip for it instead.
+        f.p.act?.(cheering ? "cheer" : f.path.length ? "walk" : f.mode === "drink" ? "sit" : f.mode === "fight" ? (f.role === "attack" ? "attack" : "block")
+          : f.mode === "burn" ? "kneel" : f.mode === "pray" ? "sit" : f.mode === "ask" ? "wave" : f.skill ?? "idle", dt);
         const fy = heightAt(f.x, f.z);
-        f.p.g.position.set(f.x, fy - (f.mode === "pray" && !f.path.length ? 0.3 : 0), f.z); f.p.g.rotation.x = 0;
+        f.p.g.position.set(f.x, fy - (f.mode === "pray" && !f.path.length && !f.p.act ? 0.3 : 0), f.z); f.p.g.rotation.x = 0;
         // A fighter's health bar sits over its head, its name and plates above that.
         const fighting = f.mode === "fight", base = fy + (fighting ? 1.9 : 1.72), lift = opt.names ? 0.32 : 0, task = opt.overlays ? 0.42 : 0;
         if (fighting) bar(pane, f.hp, f.x, fy + 1.72, f.z); else if (bars.has(pane)) dropBar(pane);
@@ -443,7 +477,9 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
       me.g.position.set(pos.x, heightAt(pos.x, pos.z), pos.z); me.g.rotation.y = pos.face;
       const sw = moving ? Math.sin(now / 90) * 0.7 : 0;
       me.legL.rotation.x = sw; me.legR.rotation.x = -sw; me.armL.rotation.x = -sw * 0.8; me.armR.rotation.x = sw * 0.8;
+      me.act?.(moving ? "run" : "idle", dt);
       for (const { k, p } of keepers) {
+        p.act?.(k === "bartender" ? "serve" : k === "teller" ? "count" : "read", dt);
         if (k === "bartender") { p.armR.rotation.x = -1.1; p.armR.rotation.z = Math.sin(now / 380) * 0.4; p.armL.rotation.x = -0.3; }
         if (k === "teller") { p.armR.rotation.x = -0.9 - Math.max(0, Math.sin(now / 260)) * 0.3; p.armL.rotation.x = -0.9; }
         if (k === "librarian") { p.armR.rotation.x = -1.0; p.armL.rotation.x = -1.0; p.g.rotation.y = Math.PI + Math.sin(now / 2400) * 0.15; }
@@ -468,7 +504,7 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
       ray.far = Infinity;
       for (const m of faded) if (!hit.has(m)) { Object.assign(m.material, { transparent: false, opacity: 1 }); faded.delete(m); }
       for (const m of hit) if (!faded.has(m)) { Object.assign(m.material, { transparent: true, opacity: 0.25 }); faded.add(m); }
-      renderer.render(scene, camera);
+      if (composer) composer.render(); else renderer.render(scene, camera);
 
       const vw = host.clientWidth, vh = host.clientHeight;
       for (const [, t] of tags) {
@@ -508,7 +544,7 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
       cancelAnimationFrame(raf); ro.disconnect();
       window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku);
       host.removeEventListener("wheel", wheel); host.removeEventListener("pointerdown", pd); window.removeEventListener("pointermove", pm); window.removeEventListener("pointerup", pu);
-      renderer.dispose(); renderer.domElement.remove(); layer.remove(); api.current = null;
+      composer?.dispose(); renderer.dispose(); renderer.domElement.remove(); layer.remove(); api.current = null;
     };
   }, []);
 

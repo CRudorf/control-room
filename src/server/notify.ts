@@ -86,7 +86,12 @@ function titleOf(it: WorkItem): string {
  * What to announce, given what was announced before. `seen` is null on the first run after a
  * start that `resume` didn't pick up: that gets one summary instead. Returns the notes and the keys to remember.
  */
-export function decide(items: WorkItem[], seen: Set<string> | null, base: string): { notes: Note[]; seen: Set<string> } {
+/** A second finish from the same agent this soon rides along with the next notification instead of making its own. */
+export const QUIET_MS = 30 * 60_000;
+export type Quiet = { now: number; lastDone: Record<string, number> };
+const donePane = (key: string) => (key.startsWith("agent-done:") ? key.slice(11).split("@")[0] : null);
+
+export function decide(items: WorkItem[], seen: Set<string> | null, base: string, quiet?: Quiet): { notes: Note[]; seen: Set<string>; lastDone?: Record<string, number> } {
   // Parked items never notify, agents and all; their wake does.
   const current = new Map<string, Signal[]>(items.map((it) => [it.id, it.lane === "parked" ? [] : signalsOf(it)]));
   const allKeys = new Set([...current.values()].flat().map((s) => s.key));
@@ -103,7 +108,9 @@ export function decide(items: WorkItem[], seen: Set<string> | null, base: string
   const candidates: { it: WorkItem; fresh: Signal[] }[] = [];
   const next = new Set([...seen].filter((k) => allKeys.has(k)));
   for (const it of items) {
-    const fresh = current.get(it.id)!.filter((s) => !seen.has(s.key));
+    const fresh = current.get(it.id)!.filter((s) => !seen.has(s.key))
+      // An agent that finished again within QUIET_MS of its last notification is no news on its own.
+      .map((s) => { const pane = donePane(s.key); return pane && quiet && quiet.now - (quiet.lastDone[pane] ?? 0) < QUIET_MS ? { ...s, triggers: false } : s; });
     // Only the ball coming back counts: The user's turn, or something asked of him.
     if (!fresh.some((s) => s.triggers && (s.anyLane || it.lane !== "waiting"))) continue;
     candidates.push({ it, fresh });
@@ -121,5 +128,12 @@ export function decide(items: WorkItem[], seen: Set<string> | null, base: string
   if (more > 0) notes.push({ title: "Control room", body: `+${more} more in My turn`, url: base, loud: false, thread: "summary" });
   // Everything on a candidate counts as announced, folded or not: a state never notifies twice.
   for (const { fresh } of candidates) for (const s of fresh) next.add(s.key);
-  return { notes, seen: next };
+  // Quiet finishes count as announced too, so they don't come back later on their own.
+  for (const it of items) for (const s of current.get(it.id)!) if (donePane(s.key) && !seen.has(s.key) && !candidates.some((c) => c.it.id === it.id)) next.add(s.key);
+  const lastDone = quiet ? { ...quiet.lastDone } : undefined;
+  if (lastDone) {
+    for (const { fresh } of candidates.slice(0, MAX_PER_POLL)) for (const s of fresh) { const pane = donePane(s.key); if (pane) lastDone[pane] = quiet!.now; }
+    for (const k of Object.keys(lastDone)) if (quiet!.now - lastDone[k] > QUIET_MS) delete lastDone[k];
+  }
+  return { notes, seen: next, lastDone };
 }

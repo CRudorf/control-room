@@ -1,6 +1,8 @@
-import { dirInProject } from "./repos";
+import { dirInProject, repoInProject } from "./repos";
 // herdr's socket: a snapshot of every agent, kept fresh by per-pane status
-// subscriptions and reconciled every 30 seconds (herdr control surface research).
+// subscriptions and reconciled on the Settings page's interval (herdr control surface research).
+// Another machine's herdr (machines.ts) joins the same snapshot: its pane, tab and workspace ids carry
+// the machine's name ("box/w1:p1"), and every request about one goes to the herdr that holds it.
 import { connect, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -10,43 +12,53 @@ import { db, load, save } from "./db";
 import { turnEnds, turnStarts, type Turn } from "./notify";
 import { forgetTasks, taskOf } from "./tasks";
 import { note } from "./runner";
+import { every } from "./every";
+import { type Machine, tuning } from "./settings";
+import { requestAt } from "./herdrsock";
+import { machine, machines, machineSocket, onMachine, remotePath, reposRoot } from "./machines";
 
 const SOCKET = process.env.HERDR_SOCKET_PATH ?? join(homedir(), ".config/herdr/herdr.sock");
-const RECONCILE_MS = 30_000;
 const GLOBAL_EVENTS = ["pane.created", "pane.closed", "pane.exited", "pane.agent_detected", "tab.created", "tab.closed", "tab.renamed", "workspace.renamed"];
 
-/** One request on its own connection. */
-export function request<T = any>(method: string, params: object = {}, timeoutMs = 10_000): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const sock = connect(SOCKET);
-    let buf = "";
-    const done = (fn: () => void) => { clearTimeout(timer); sock.destroy(); fn(); };
-    const timer = setTimeout(() => done(() => reject(new Error(`herdr ${method}: timed out`))), timeoutMs);
-    sock.on("error", (e) => done(() => reject(e)));
-    sock.on("connect", () => sock.write(JSON.stringify({ id: method, method, params }) + "\n"));
-    sock.on("data", (d) => {
-      buf += d.toString();
-      const nl = buf.indexOf("\n");
-      if (nl < 0) return;
-      const msg = JSON.parse(buf.slice(0, nl));
-      done(() => (msg.error ? reject(new Error(`herdr ${method}: ${msg.error.message ?? msg.error.code}`)) : resolve(msg.result)));
-    });
-  });
+/** One request to this Mac's herdr, on its own connection. */
+export const request = <T = any>(method: string, params: object = {}, timeoutMs = 10_000): Promise<T> => requestAt<T>(SOCKET, method, params, timeoutMs);
+
+/** The machine an id is on and its id there: "box/w1:p1" is w1:p1 on box; a bare id is this Mac's. */
+export function onWhich(id: string): { machine: string | null; id: string } {
+  const i = id.indexOf("/");
+  return i < 0 ? { machine: null, id } : { machine: id.slice(0, i), id: id.slice(i + 1) };
+}
+const tag = (machine: string | null, id: string) => (machine ? `${machine}/${id}` : id);
+
+/** A request to the herdr of `machine` (null: this Mac). */
+export function requestOn<T = any>(machine: string | null, method: string, params: object = {}, timeoutMs = 10_000): Promise<T> {
+  if (!machine) return request<T>(method, params, timeoutMs);
+  const sock = machineSocket(machine);
+  return sock ? requestAt<T>(sock, method, params, timeoutMs) : Promise.reject(new Error(`${machine} isn't connected`));
 }
 
-const git = async (cwd: string, ...args: string[]) => {
+/** A request about a pane or tab, to the herdr that holds it, with the id it has there. */
+export function requestFor<T = any>(id: string, method: string, params: (id: string) => object, timeoutMs = 10_000): Promise<T> {
+  const w = onWhich(id);
+  return requestOn<T>(w.machine, method, params(w.id), timeoutMs);
+}
+
+type Git = (cwd: string, ...args: string[]) => Promise<string | null>;
+const gitLocal: Git = async (cwd, ...args) => {
   const p = Bun.spawn(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "ignore" });
   const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
   return code === 0 ? out.trim() : null;
 };
+const gitOn = (m: Machine): Git => (cwd, ...args) => onMachine(m, ["git", "-C", cwd, ...args], 10_000).then((o) => o.trim(), () => null);
 
 // Which repo, branch, upstream branch and commit an agent's foreground directory is on;
 // git calls cached for a minute. An agent may work on a local branch of its own that it
 // pushes to a PR's branch, so the upstream and the commit tie it to the PR too.
 type GitInfo = { at: number; repo: string | null; branch: string | null; upstream: string | null; head: string | null };
 const gitCache = new Map<string, GitInfo>();
-async function gitInfo(cwd: string): Promise<GitInfo> {
-  const hit = gitCache.get(cwd);
+async function gitInfo(cwd: string, m: Machine | null = null): Promise<GitInfo> {
+  const key = tag(m?.name ?? null, cwd), git = m ? gitOn(m) : gitLocal;
+  const hit = gitCache.get(key);
   if (hit && Date.now() - hit.at < 60_000) return hit;
   let repo: string | null = null, branch: string | null = null;
   const out = await git(cwd, "rev-parse", "--abbrev-ref", "HEAD", "--path-format=absolute", "--git-common-dir").catch(() => null);
@@ -58,7 +70,7 @@ async function gitInfo(cwd: string): Promise<GitInfo> {
   const up = repo ? await git(cwd, "rev-parse", "--abbrev-ref", "@{upstream}").catch(() => null) : null;
   const head = repo ? await git(cwd, "rev-parse", "HEAD").catch(() => null) : null;
   const v = { at: Date.now(), repo, branch, upstream: up?.replace(/^[^/]+\//, "") ?? null, head };
-  gitCache.set(cwd, v);
+  gitCache.set(key, v);
   return v;
 }
 
@@ -95,19 +107,42 @@ let settle = () => {};
 const first = new Promise<void>((r) => (settle = r));
 export const herdrReady = () => first;
 
+/** Each machine's herdr snapshot, its ids tagged with the machine; a machine that fails is left out and says why. */
+export const machineErrors = new Map<string, string>();
+type Source = { m: Machine | null; s: any };
+async function readSources(): Promise<Source[]> {
+  const local: Source = { m: null, s: (await request("session.snapshot")).snapshot };
+  const remote = await Promise.all(machines().map(async (m): Promise<Source | null> => {
+    try {
+      const s = (await requestOn(m.name, "session.snapshot")).snapshot;
+      machineErrors.delete(m.name);
+      const t = (o: any, ...keys: string[]) => ({ ...o, ...Object.fromEntries(keys.filter((k) => o[k]).map((k) => [k, tag(m.name, o[k])])) });
+      return { m, s: { ...s, tabs: s.tabs.map((x: any) => t(x, "tab_id", "workspace_id")), workspaces: s.workspaces.map((x: any) => t(x, "workspace_id")),
+        agents: s.agents.map((x: any) => t(x, "pane_id", "tab_id", "workspace_id")) } };
+    } catch (e) { machineErrors.set(m.name, (e as Error).message); return null; }
+  }));
+  return [local, ...remote.filter((x): x is Source => !!x)];
+}
+
+/** Whether a directory on another machine is in one of this project's repos there. */
+function remoteInProject(m: Machine, cwd: string) {
+  const root = remotePath(m, reposRoot(m)).replace(/\/$/, "") + "/";
+  return cwd.startsWith(root) && repoInProject(cwd.slice(root.length).split("/")[0]);
+}
+
 async function snapshot() {
   try {
-    const { snapshot: s } = await request("session.snapshot");
-    const tabs = new Map<string, any>(s.tabs.map((t: any) => [t.tab_id, t]));
-    const workspaces = new Map<string, any>(s.workspaces.map((w: any) => [w.workspace_id, w]));
+    const sources = await readSources();
+    const tabs = new Map<string, any>(sources.flatMap(({ s }) => s.tabs.map((t: any) => [t.tab_id, t])));
+    const workspaces = new Map<string, any>(sources.flatMap(({ s }) => s.workspaces.map((w: any) => [w.workspace_id, w])));
     const next: Agent[] = [];
     let turnsChanged = false;
-    for (const a of s.agents) {
+    for (const { m, s } of sources) for (const a of s.agents) {
       if (a.agent !== "claude") continue;
       const cwd = a.foreground_cwd || a.cwd;
       // A session of another project is not visible here.
-      if (!dirInProject(cwd)) continue;
-      const g = await gitInfo(cwd);
+      if (!(m ? remoteInProject(m, cwd) : dirInProject(cwd))) continue;
+      const g = await gitInfo(cwd, m);
       const seq = a.state_change_seq ?? 0;
       let status = (a.agent_status ?? "unknown") as AgentStatus;
       if (dismissed.has(a.pane_id) && dismissed.get(a.pane_id) !== seq && status !== "done") dismissed.delete(a.pane_id);
@@ -130,7 +165,7 @@ async function snapshot() {
       const was = since.get(a.pane_id);
       if (!was || was.status !== status) since.set(a.pane_id, { status, at: was ? new Date().toISOString() : null });
       next.push({
-        pane: a.pane_id, tab: a.tab_id, workspace: a.workspace_id,
+        pane: a.pane_id, tab: a.tab_id, workspace: a.workspace_id, machine: m?.name ?? null,
         name: a.name ?? null, label: tabs.get(a.tab_id)?.label ?? a.terminal_title_stripped ?? a.pane_id,
         title: a.terminal_title_stripped ?? "", workspaceLabel: workspaces.get(a.workspace_id)?.label ?? "",
         status, cwd, repo: g.repo, branch: g.branch, upstream: g.upstream, head: g.head,
@@ -165,18 +200,27 @@ async function snapshot() {
   }
 }
 
-let sub: Socket | null = null;
+// One event subscription per herdr: "" is this Mac's, else the machine's name.
+const subs = new Map<string, Socket>();
 let pending: ReturnType<typeof setTimeout> | null = null;
 const soon = () => { if (!pending) pending = setTimeout(() => { pending = null; void snapshot(); }, 400); };
+const sourceNames = () => ["", ...machines().map((m) => m.name).filter((n) => machineSocket(n))];
 
 function resubscribe() {
-  sub?.destroy();
-  const sock = connect(SOCKET);
-  sub = sock;
+  for (const k of [...subs.keys()]) if (!sourceNames().includes(k)) { subs.get(k)?.destroy(); subs.delete(k); }
+  for (const k of sourceNames()) subscribe(k);
+}
+
+function subscribe(key: string) {
+  subs.get(key)?.destroy();
+  const path = key ? machineSocket(key) : SOCKET;
+  if (!path) return;
+  const sock = connect(path);
+  subs.set(key, sock);
   let buf = "";
   const subscriptions = [
     ...GLOBAL_EVENTS.map((type) => ({ type })),
-    ...agents.map((a) => ({ type: "pane.agent_status_changed", pane_id: a.pane })),
+    ...agents.filter((a) => (a.machine ?? "") === key).map((a) => ({ type: "pane.agent_status_changed", pane_id: onWhich(a.pane).id })),
   ];
   sock.on("connect", () => sock.write(JSON.stringify({ id: "sub", method: "events.subscribe", params: { subscriptions } }) + "\n"));
   sock.on("data", (d) => {
@@ -192,7 +236,7 @@ function resubscribe() {
       } catch {}
     }
   });
-  const drop = () => { if (sub === sock) sub = null; };
+  const drop = () => { if (subs.get(key) === sock) subs.delete(key); };
   sock.on("error", drop);
   sock.on("close", drop);
 }
@@ -201,7 +245,7 @@ export function startHerdr(changed: () => void) {
   onChange = changed;
   void snapshot();
   // A dropped subscription comes back on the next reconcile.
-  setInterval(() => void snapshot().then(() => { if (!sub && up) resubscribe(); }), RECONCILE_MS);
+  every(tuning.herdrMs, () => void snapshot().then(() => { for (const k of sourceNames()) if (!subs.has(k) && (k || up)) subscribe(k); }));
 }
 
 const labelOf = (a: Agent | undefined, pane: string) => (a ? `${a.workspaceLabel} / ${a.label}` : pane);
@@ -219,16 +263,17 @@ export function dismissAgent(pane: string, item: string | null, how = "seen") {
 /** Ends an agent's session: its pane, or its whole tab when it's alone there. Resumable from History. */
 export async function closeAgent(pane: string, item: string | null) {
   const a = agents.find((x) => x.pane === pane);
-  const { snapshot: s } = await request("session.snapshot");
-  const tab = s.panes.find((p: any) => p.pane_id === pane)?.tab_id;
+  const w = onWhich(pane);
+  const { snapshot: s } = await requestOn(w.machine, "session.snapshot");
+  const tab = s.panes.find((p: any) => p.pane_id === w.id)?.tab_id;
   const alone = s.panes.filter((p: any) => p.tab_id === tab).length === 1;
   let result = DEV ? "dry run" : "closed";
   try {
-    if (!DEV) await (alone ? request("tab.close", { tab_id: tab }) : request("pane.close", { pane_id: pane }));
+    if (!DEV) await (alone ? requestOn(w.machine, "tab.close", { tab_id: tab }) : requestOn(w.machine, "pane.close", { pane_id: w.id }));
   } catch (e) {
     result = `failed: ${(e as Error).message}`;
   }
-  const resume = a?.session ? [`cd '${a.cwd}' && claude --resume ${a.session}`] : [];
+  const resume = a?.session ? [`${w.machine ? `ssh -t ${machine(w.machine)?.ssh ?? w.machine} ` : ""}cd '${a.cwd}' && claude --resume ${a.session}`] : [];
   note({ item, trigger: "agent pane" }, alone ? "close-tab" : "close-pane", labelOf(a, pane), result, { detail: { agent: a, resume } });
   void snapshot();
   if (result.startsWith("failed")) throw new Error(result);
@@ -245,7 +290,7 @@ export async function sendKeys(pane: string, keys: string[], item: string | null
   const a = agents.find((x) => x.pane === pane);
   let result = DEV ? "dry run" : "sent";
   try {
-    if (!DEV) await request("pane.send_keys", { pane_id: pane, keys });
+    if (!DEV) await requestFor(pane, "pane.send_keys", (id) => ({ pane_id: id, keys }));
   } catch (e) {
     result = `failed: ${(e as Error).message}`;
   }
@@ -269,11 +314,11 @@ export async function typeInto(pane: string, ops: Typed[], item: string | null) 
   if (!a) throw new Error("that session isn't open any more");
   for (const o of ops) {
     if ("text" in o) {
-      if (!DEV) await request("pane.send_text", { pane_id: pane, text: o.text });
+      if (!DEV) await requestFor(pane, "pane.send_text", (id) => ({ pane_id: id, text: o.text }));
       lines.set(pane, (lines.get(pane) ?? "") + o.text);
       continue;
     }
-    if (!DEV) await request("pane.send_keys", { pane_id: pane, keys: [o.key] });
+    if (!DEV) await requestFor(pane, "pane.send_keys", (id) => ({ pane_id: id, keys: [o.key] }));
     if (o.key === "backspace") lines.set(pane, (lines.get(pane) ?? "").slice(0, -1));
     else if (o.key === "ctrl+u" || o.key === "ctrl+c") lines.delete(pane);
     else if (o.key === "enter") {
@@ -292,7 +337,7 @@ export async function sendToAgent(pane: string, text: string, item: string | nul
   // The user's own message from the agent pane is a reply; the loop's and new feedback's aren't.
   if (trigger !== "agent pane") promptedByBoard(pane);
   try {
-    if (!DEV) await request("agent.prompt", { target: pane, text });
+    if (!DEV) await requestFor(pane, "agent.prompt", (id) => ({ target: id, text }));
   } catch (e) {
     result = `failed: ${(e as Error).message}`;
     unprompted(pane);
@@ -305,7 +350,7 @@ export async function sendToAgent(pane: string, text: string, item: string | nul
 
 /** The agent's recent output, as plain text. */
 export async function readAgent(pane: string): Promise<string> {
-  const r = await request("pane.read", { pane_id: pane, source: "recent_unwrapped", lines: 120 });
+  const r = await requestFor(pane, "pane.read", (id) => ({ pane_id: id, source: "recent_unwrapped", lines: 120 }));
   return r.read?.text ?? r.text ?? "";
 }
 
@@ -331,11 +376,20 @@ async function terminalApp(): Promise<string | null> {
   return null;
 }
 
-/** Show the agent in herdr and bring herdr's terminal to the front. This also marks a `done` agent as seen. */
-export async function focusAgent(pane: string): Promise<{ app: string | null }> {
+/**
+ * Show the agent in herdr and bring herdr's terminal to the front. This also marks a `done` agent as seen.
+ * An agent on another machine is focused in that machine's herdr, which a terminal shows with `attach`.
+ */
+export async function focusAgent(pane: string): Promise<{ app: string | null; machine?: string; attach?: string }> {
   // pane.focus marks the tab seen like agent.focus, and unlike it also moves every
   // attached herdr window to the pane (herdr 0.9 client_views.rs). One call, one switch.
-  await request("pane.focus", { pane_id: pane });
+  await requestFor(pane, "pane.focus", (id) => ({ pane_id: id }));
+  const w = onWhich(pane);
+  if (w.machine) {
+    finishedAt.delete(pane);
+    soon();
+    return { app: null, machine: w.machine, attach: `herdr --remote ${machine(w.machine)?.ssh ?? w.machine}` };
+  }
   finishedAt.delete(pane); // looked at from the control room: no longer "finished"
   const app = await terminalApp();
   if (app) await sh(["open", "-a", app]);

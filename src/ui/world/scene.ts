@@ -569,7 +569,13 @@ export function buildTown() {
   return { scene, ground, roofs, walls };
 }
 
-export type Person = { g: THREE.Group; legL: THREE.Object3D; legR: THREE.Object3D; armL: THREE.Object3D; armR: THREE.Object3D };
+/** What an animated person is doing, for a kit whose people play animation clips instead of swinging limbs. */
+export type Act = "idle" | "walk" | "run" | "cheer" | "die" | "sit" | "kneel" | "wave" | "attack" | "block" | "serve" | "count" | "read" | Skill;
+/** A person: the group, and the limbs the World swings. A rigged one also has `act`, which the World calls each frame
+ *  with what it's doing and the seconds since the last (its limbs are then stand-ins nobody sees), a `hand` to hold
+ *  tools in and a `head` for what it wears. */
+export type Person = { g: THREE.Group; legL: THREE.Object3D; legR: THREE.Object3D; armL: THREE.Object3D; armR: THREE.Object3D;
+  act?: (what: Act, dt: number) => void; hand?: THREE.Object3D; head?: THREE.Object3D };
 export const SHIRTS = [0x8a2b2b, 0x2b4f8a, 0x6a2b8a, 0x2b8a5a, 0x8a6a2b, 0x2b7a8a, 0x7a7a2b];
 const SKINS = [0xd9a77a, 0xc08a5a, 0xe8c09a, 0x8a5a3a, 0xb07a50];
 const HAIR = [0x3a2a1a, 0x1a1a1a, 0x8a5a2a, 0xc8a050, 0x6a2a1a, 0x9a9a9a];

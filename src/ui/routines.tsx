@@ -3,36 +3,36 @@
 // default, with a link to its newest report. The weekly improvement loop shows here too, with its own Run now.
 import { useEffect, useState } from "react";
 import type { Routine, RoutineRun } from "../shared/types";
-import { post, toast } from "./actions";
+import { focusText, post, toast } from "./actions";
 
 const DAYS = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const blank = (): Routine => ({ id: "", name: "", prompt: "", repos: [], cadence: "daily", weekday: 1, weekdaysOnly: true, when: "start", enabled: true });
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
-type Live = Record<string, { pane: string; status: string; workspace: string }>;
-type State = { routines: Routine[]; runs: Record<string, RoutineRun>; repos: string[]; idle: number | null; startHour: number; loop: { week: string; at: string; agent: string | null; error: string | null } | null; live: Live; friction: { path: string; at: string } | null };
+type Live = Record<string, { pane: string; status: string; workspace: string; machine: string | null }>;
+type State = { routines: Routine[]; runs: Record<string, RoutineRun>; repos: string[]; idle: number | null; startHour: number; machines: string[]; loop: { week: string; at: string; agent: string | null; error: string | null } | null; live: Live; friction: { path: string; at: string } | null };
 
 const STATUS: Record<string, string> = { working: "working", blocked: "waiting on you", done: "finished", idle: "idle", unknown: "open" };
 
 /** Each agent a run started: where it is and how it's doing, with a button to open it; or that it's closed. */
 function RunAgents({ names, live }: { names: string[]; live: Live }) {
-  const open = async (pane: string) => {
-    const r = await post("/api/agent/focus", { pane });
-    toast(r.error ? `Couldn't open: ${r.error}` : r.app ? `Opened in ${r.app}` : "Focused in herdr");
-  };
+  const open = async (pane: string, name: string) => toast(focusText(await post("/api/agent/focus", { pane }), name));
   if (!names.length) return null;
   return (
     <div className="run-agents">
       {names.map((n) => { const a = live[n]; return (
         <span key={n} className="run-agent">
           <i className={`dot ${a?.status ?? "gone"}`} /><b>{n}</b>
-          <span className="st dim">{a ? `${STATUS[a.status] ?? a.status} · ${a.workspace}` : "closed"}</span>
-          {a && <button className="btn sm" onClick={() => void open(a.pane)}>Open</button>}
+          <span className="st dim">{a ? `${STATUS[a.status] ?? a.status} · ${a.machine ? `${a.machine} · ` : ""}${a.workspace}` : "closed"}</span>
+          {a && <button className="btn sm" onClick={() => void open(a.pane, n)}>Open</button>}
         </span>
       ); })}
     </div>
   );
 }
+
+const runOnText = (r: Routine, machines: string[]) =>
+  !machines.length ? "" : r.brief === "sessions" ? ", on this Mac, where its sessions are" : r.runOn === "local" ? ", on this Mac only" : `, on ${machines.join(" or ")} first, else this Mac`;
 
 const whenText = (r: Routine, startHour: number) =>
   `${r.cadence === "daily" ? (r.weekdaysOnly ? "Every weekday" : "Every day") : `Every ${DAYS[r.weekday]}`}, ${r.when === "start" ? `when you start work (the first time you're at the Mac after ${startHour}am)` : `at ${r.when}`}`;
@@ -41,10 +41,12 @@ function runText(run: RoutineRun | undefined) {
   if (!run) return "Hasn't run yet.";
   const at = new Date(run.at).toLocaleString();
   if (run.error && !run.agents.length) return `Failed ${at}: ${run.error}`;
-  return `Ran ${at}${run.trigger === "routines page" ? " by hand" : ""}${run.agents.some((a) => a.dryRun) ? " (dev: recorded, nothing started)" : ""}${run.error ? `. Failed in ${run.error}` : ""}`;
+  const where = [...new Set(run.agents.map((a) => a.machine ?? "this Mac"))].join(" and ");
+  const fell = run.agents.filter((a) => a.fellBack).map((a) => a.fellBack).join("; ");
+  return `Ran ${at}${where ? ` on ${where}` : ""}${run.trigger === "routines page" ? " by hand" : ""}${run.agents.some((a) => a.dryRun) ? " (dev: recorded, nothing started)" : ""}${fell ? `. Fell back to this Mac: ${fell}` : ""}${run.error ? `. Failed in ${run.error}` : ""}`;
 }
 
-function Editor({ init, repos, onDone }: { init: Routine; repos: string[]; onDone: (saved: boolean) => void }) {
+function Editor({ init, repos, machines, onDone }: { init: Routine; repos: string[]; machines: string[]; onDone: (saved: boolean) => void }) {
   const [r, setR] = useState(init);
   const [busy, setBusy] = useState(false);
   const isNew = !init.id;
@@ -74,6 +76,11 @@ function Editor({ init, repos, onDone }: { init: Routine; repos: string[]; onDon
         </select>
         {r.when !== "start" && <input className="field" type="time" value={r.when} onChange={(e) => set("when", e.target.value)} />}
       </div>
+      {machines.length > 0 && r.brief !== "sessions" && <div className="row"><span className="st">RUN ON</span>
+        <select className="field" value={r.runOn ?? "machines"} onChange={(e) => set("runOn", e.target.value === "local" ? "local" : undefined)}>
+          <option value="machines">{machines.join(", ")} first, else this Mac</option><option value="local">This Mac only</option>
+        </select>
+      </div>}
       <div className="row-acts">
         <button type="button" className="btn" onClick={() => onDone(false)}>Cancel</button>
         <button className="btn primary" type="submit" disabled={busy || !r.name.trim() || !r.repos.length}>{isNew ? "Add routine" : "Save"}</button>
@@ -115,13 +122,13 @@ export function Routines({ onClose }: { onClose: () => void }) {
           <button className="btn" onClick={onClose}>Close <kbd>esc</kbd></button>
         </div></div>
       <div className="routines-body">
-        {editing && s && <Editor init={editing} repos={s.repos} onDone={(saved) => { setEditing(null); if (saved) load(); }} />}
+        {editing && s && <Editor init={editing} repos={s.repos} machines={s.machines} onDone={(saved) => { setEditing(null); if (saved) load(); }} />}
         {!s && <div className="empty">Reading routines…</div>}
         {s && !s.routines.length && !editing && <div className="empty">No routines yet. A daily one with an empty prompt checks Sentry when you start work.</div>}
         {s?.routines.map((r) => (
           <div key={r.id} className={`routine ${r.enabled ? "" : "paused"}`}>
             <div className="routine-h"><b>{r.name}</b>{!r.enabled && <span className="st warn">paused</span>}<span className="st dim">{r.repos.join(", ")}</span></div>
-            <div className="st">{whenText(r, s.startHour)}</div>
+            <div className="st">{whenText(r, s.startHour)}{runOnText(r, s.machines)}</div>
             {r.brief === "sessions"
               ? <div className="routine-prompt">
                   <span className="dim">Reads every session tied to a work item, with how each item moved on the board, and suggests what would take friction out of the workflow, one card per candidate.</span>

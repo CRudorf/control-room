@@ -24,7 +24,10 @@ const KIND: Record<Feedback["kind"], string> = { thread: "commented", changes: "
 /** The agent that owns a PR: one on its branch, else the work item's only agent. Never a helper, or one blocked on the user. */
 export function ownerOf(p: PrRow, all: Agent[]): Agent | null {
   const agents = all.filter((a) => !HELPER.test(a.label));
-  const on = agents.find((a) => a.branch === p.branch || a.upstream === p.branch) ?? (agents.length === 1 ? agents[0] : null);
+  // The only session on the item is the owner only when it isn't on some other branch: findings for one
+  // PR must never land in a session building another.
+  const loose = (a: Agent) => !a.branch || /^(main|master|develop|plan|HEAD)$/.test(a.branch) || a.branch.startsWith("worktree-");
+  const on = agents.find((a) => a.branch === p.branch || a.upstream === p.branch) ?? (agents.length === 1 && loose(agents[0]) ? agents[0] : null);
   return on && on.status !== "blocked" ? on : null;
 }
 

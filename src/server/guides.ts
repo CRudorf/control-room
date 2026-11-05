@@ -10,10 +10,9 @@ import { load, save } from "./db";
 import { read, write } from "./runner";
 import { linkedGuide } from "./guidelinks";
 import { startAgent } from "./handoff";
-import { guideFile, guidePath, metaFile, personasFor, reviewPrompt } from "./review";
+import { guideFile, guidePath, metaFile, personasFor, reviewStart } from "./review";
+import { tuning } from "./settings";
 
-/** Agents running guides at once, at most; each is a full review. */
-export const MAX_GUIDES = 2;
 
 type Meta = { sha: string; at: string; url?: string };
 
@@ -45,7 +44,7 @@ export function applyGuides(items: WorkItem[]): WorkItem[] {
 }
 
 /**
- * Reviews to start now, at most MAX_GUIDES running: requested PRs with no current guide and none
+ * Reviews to start now, at most the Settings page's field guides at once running (each is a full review): requested PRs with no current guide and none
  * started for this head; and each of the user's own PRs once, a self-review before his reviewers look.
  * `selfDone` holds his PRs already self-reviewed (or there before self-review existed).
  */
@@ -67,7 +66,7 @@ export function toGuide(items: WorkItem[], started: Record<string, string>, lowM
     }
   }
   // Someone waiting on a review comes before the user's own.
-  return out.sort((a, b) => Number(a.own) - Number(b.own)).slice(0, Math.max(0, MAX_GUIDES - running));
+  return out.sort((a, b) => Number(a.own) - Number(b.own)).slice(0, Math.max(0, tuning.guides() - running));
 }
 
 let started: Record<string, string> = load<Record<string, string>>("guides") ?? {};
@@ -93,7 +92,10 @@ export async function startGuides(items: WorkItem[], lowMemory: boolean, publish
       save("guides", started);
       save("selfreviews", selfDone);
       try {
-        await startAgent({ item: it.id, repo: p.repo, pr: prRef(p), kind: own ? "selfreview" : "review", prompt: reviewPrompt(p, personasFor(p), own), edited: false });
+        // A new head after an earlier review is a re-check of what changed, not a review from scratch.
+        const prompt = reviewStart(p, personasFor(p), own);
+        if (prompt === null) continue;
+        await startAgent({ item: it.id, repo: p.repo, pr: prRef(p), kind: own ? "selfreview" : "review", prompt, edited: false });
         log(`${own ? "self-review" : "field guide"} started on ${prRef(p)} at ${p.head.slice(0, 7)}`);
       } catch (e) {
         log(`field guide on ${prRef(p)} failed to start:`, (e as Error).message);

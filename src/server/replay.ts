@@ -10,9 +10,7 @@ import { load, save } from "./db";
 import { startAgent } from "./handoff";
 import { allLessons, current, TESTS_RULE, type Lesson } from "./lessons";
 import { lessonFiles, shipped } from "./shipped";
-
-/** Replays started at once, at most; each is a full review. */
-export const MAX_REPLAYS = 2;
+import { tuning } from "./settings";
 
 const DIR = join(INSTALLED_STATE_DIR, "replays");
 mkdirSync(DIR, { recursive: true });
@@ -87,10 +85,10 @@ export function dueReplays(ws: Shipped[], started: Record<string, string>, again
 /** How many confirmed breaks haven't been replayed. */
 export const waitingReplays = () => dueReplays(shipped(), load<Record<string, string>>("replays_started") ?? {}, false).length;
 
-/** Starts up to MAX_REPLAYS replays; the rest wait for the next press. */
+/** Starts up to the Settings page's replays per press (each is a full review); the rest wait for the next press. */
 export async function runReplays(again = false) {
   const started = load<Record<string, string>>("replays_started") ?? {};
-  const due = dueReplays(shipped(), started, again).slice(0, MAX_REPLAYS);
+  const due = dueReplays(shipped(), started, again).slice(0, tuning.replays());
   const out: string[] = [];
   for (const w of due) {
     const r = await startAgent({ item: `replay-${w.feature}`, repo: w.repo ?? w.ref.split("#")[0], pr: null, kind: "custom", prompt: replayPrompt(w, lessonsBefore(allLessons(), w)), edited: false, bare: true });

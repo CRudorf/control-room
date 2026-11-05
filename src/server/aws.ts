@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { load, save } from "./db";
 import { read, write } from "./runner";
 
-export const MFA_SCRIPT = SETTINGS.awsMfaScript ? repoPath(SETTINGS.awsMfaScript.split("/")[0]) + "/" + SETTINGS.awsMfaScript.split("/").slice(1).join("/") : "";
+export const mfaScript = () => SETTINGS.awsMfaScript ? repoPath(SETTINGS.awsMfaScript.split("/")[0]) + "/" + SETTINGS.awsMfaScript.split("/").slice(1).join("/") : "";
 export const PROFILE = "mfa";
 const KEY = "aws_mfa";
 
@@ -39,7 +39,7 @@ export async function awsSession(): Promise<AwsSession> {
   // Only a project that uses AWS shows the chip.
   if (!SETTINGS.aws) return { profile: PROFILE, expiresAt: null, valid: null, script: false, disabled: true };
   const expiresAt = load<string>(KEY);
-  const script = existsSync(MFA_SCRIPT);
+  const script = existsSync(mfaScript());
   // A known expiry in the future needs no network call; an unknown one asks STS.
   if (expiresAt && Date.parse(expiresAt) > Date.now()) return { profile: PROFILE, expiresAt, valid: true, script };
   return { profile: PROFILE, expiresAt, valid: await probeValid(), script };
@@ -48,11 +48,11 @@ export async function awsSession(): Promise<AwsSession> {
 /** Runs aws-mfa.sh with the authenticator code. The new keys go straight into ~/.aws/credentials. */
 export async function refreshMfa(code: string): Promise<AwsSession> {
   if (!isCode(code)) throw new Error("the code is 6 digits");
-  if (!existsSync(MFA_SCRIPT)) throw new Error(`no script at ${MFA_SCRIPT}`);
+  if (!existsSync(mfaScript())) throw new Error(`no script at ${mfaScript()}`);
   let out = "";
   // The code is a secret for 30 seconds: `sent` names the script and profile, never the code.
   await write({ item: null, trigger: "header" }, "aws-mfa", `aws-mfa.sh --profile ${PROFILE}`, async () => {
-    out = await read(["bash", MFA_SCRIPT, code, "--profile", PROFILE]);
+    out = await read(["bash", mfaScript(), code, "--profile", PROFILE]);
     return "refreshed";
   }, { liveInDev: true });
   const expiresAt = parseExpiry(out);

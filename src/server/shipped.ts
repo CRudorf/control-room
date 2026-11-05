@@ -22,7 +22,7 @@ const WINDOW_MS = 7 * 24 * 3600_000;
 const BACKFILL_MS = 30 * 24 * 3600_000;
 const EVERY_MS = 60 * 60_000;
 const FILES = 12;
-const SENTRY = SETTINGS.sentryOrg && `https://${SETTINGS.sentryOrg}.sentry.io/api/0/organizations/${SETTINGS.sentryOrg}`;
+const sentry = () => SETTINGS.sentryOrg && `https://${SETTINGS.sentryOrg}.sentry.io/api/0/organizations/${SETTINGS.sentryOrg}`;
 const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 
 // Agents verifying a finding write here, where the installed app reads.
@@ -104,7 +104,7 @@ async function gh(path: string, raw = false): Promise<any> {
 
 /** With a Sentry org in settings, a token from SENTRY_AUTH_TOKEN or ~/.claude/sentry-config.yaml (`auth_token: ...`), as signal-to-pr reads it. */
 function sentryToken(): string | null {
-  if (!SENTRY) return null;
+  if (!sentry()) return null;
   if (process.env.SENTRY_AUTH_TOKEN) return process.env.SENTRY_AUTH_TOKEN;
   const f = join(homedir(), ".claude", "sentry-config.yaml");
   if (!existsSync(f)) return null;
@@ -212,7 +212,7 @@ export async function check(f: PrFacts, prev: Shipped | undefined, now: number):
     const ids = new Set<string>();
     for (const file of w.files) {
       const q = `is:unresolved firstSeen:>=${f.merged!.slice(0, 19)} firstSeen:<=${end.slice(0, 19)} stack.filename:"*${stackName(file)}"`;
-      const r = await fetch(`${SENTRY}/issues/?project=-1&environment=production&statsPeriod=14d&limit=10&query=${encodeURIComponent(q)}`, { headers: { authorization: `Bearer ${token}` } });
+      const r = await fetch(`${sentry()}/issues/?project=-1&environment=production&statsPeriod=14d&limit=10&query=${encodeURIComponent(q)}`, { headers: { authorization: `Bearer ${token}` } });
       if (!r.ok) { log(`shipped: sentry ${r.status} for ${f.ref}`); w.sentry = null; break; }
       for (const i of (await r.json()) as any[]) if (!ids.has(i.id)) { ids.add(i.id); w.sentry.push({ sha: i.shortId, at: i.firstSeen, text: i.title, url: i.permalink, file }); }
     }

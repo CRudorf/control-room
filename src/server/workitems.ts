@@ -104,6 +104,8 @@ function cellsFor(prs: PrRow[], lane: Lane, agents: Agent[]): WorkItem["cells"] 
 
   const ci: Cell = prs.some((p) => p.checks === "failure" || p.checks === "error")
     ? { text: "✗", tone: "pen" }
+    : prs.some((p) => p.checks === "known-broken")
+      ? { text: "BRKN", tone: "dim" }
     : prs.some((p) => p.checks === "pending")
       ? { text: "RUN", tone: "" } // drawn as a spinner
       : prs.some((p) => p.checks === "success")
@@ -514,7 +516,7 @@ export function finishedToday(rows: { ref: string; at: string; state: "merged" |
 // Statuses past the point a PR moves an issue along: someone else has it, or it's set aside.
 const PAST = /review|qa|merged|deployed|blocked|parking/i;
 // Product testing statuses (GLOSSARY: Product testing): never "no PR yet".
-const ACCEPTANCE = new Set([SETTINGS.flow?.testingStatus, SETTINGS.flow?.approvedStatus].filter(Boolean).map((x) => x!.toLowerCase()));
+const acceptance = () => new Set([SETTINGS.flow?.testingStatus, SETTINGS.flow?.approvedStatus].filter(Boolean).map((x) => x!.toLowerCase()));
 const to = (j: Issue, re: RegExp) => j.transitions.find((t) => re.test(t.to) && t.to !== j.status);
 const suggestion = (j: Issue, t: Issue["transitions"][number] | undefined, why: string): Suggested | null =>
   t ? { key: j.key, from: j.status, to: t.to, id: t.id, why } : null;
@@ -538,7 +540,7 @@ export type JiraCtx = { branchesFor?: (key: string) => ItemBranch[]; mergedPrs?:
 
 /** A run has nothing left to review when its issue reached product testing or done, or its PRs merged after it started and none is open. */
 export function runMovedOn(run: Run, it: WorkItem, issue: Issue | undefined, mergedAt: string[]): boolean {
-  if (issue && (issue.category === "done" || ACCEPTANCE.has(issue.status.toLowerCase()))) return true;
+  if (issue && (issue.category === "done" || acceptance().has(issue.status.toLowerCase()))) return true;
   return !it.prs.length && mergedAt.some((at) => ts(at) >= ts(run.at));
 }
 
@@ -592,7 +594,7 @@ export function applyJira(items: WorkItem[], issues: Map<string, Issue>, ctx: Ji
       continue;
     }
     // An acceptance status without its testing facts still never asks to start.
-    if (ACCEPTANCE.has(j.status.toLowerCase())) continue;
+    if (acceptance().has(j.status.toLowerCase())) continue;
     // In review, parked or blocked with no PR open: nothing to do here.
     if (j.category !== "indeterminate" || PAST.test(j.status)) continue;
     const why = bs.length ? `${j.status} in the tracker · ${branchLine(bs)}` : `${j.status} in the tracker, no PR yet`;
@@ -640,7 +642,7 @@ export function applyRuns(items: WorkItem[], runs: Map<string, Run>, movedOn: (r
   });
 }
 
-const STEPS: NextStep[] = ["answer", "start", "quick", "check", "look"];
+const STEPS: NextStep[] = ["answer", "start", "quick", "post", "check", "look"];
 
 /**
  * Which step of the Next queue a work item's primary action belongs to, or null when it's not
@@ -655,11 +657,28 @@ export function nextStep(it: WorkItem): NextStep | null {
     return a?.status === "blocked" ? "answer" : a && isFinished(a) ? "check" : null;
   }
   if (pa.handoff || pa.start) return "start";
-  if (pa.act === "curate" || pa.run) return "check";
+  // Drafts waiting to go out: the user's one key to post them.
+  if (pa.act === "curate" || pa.act === "replies") return "post";
+  if (pa.run) return "check";
   if (pa.act) return "quick";
   if (it.prs.some((p) => p.url === pa.url && mergeable(p))) return "quick";
   // Anything else with an agent on it is the agent's move.
   return it.agents.some((a) => a.status === "working") ? null : "look";
+}
+
+/**
+ * What a "look" item needs, in words: the board found no one-key move for it, so it says what's there to
+ * decide instead of leaving the user to work it out. Pure.
+ */
+export function lookWhy(it: WorkItem): string {
+  if (!it.prs.length) {
+    if (it.agents.length) return "its agent stopped without a PR: read what it found, then start the fix or park it";
+    return it.branches?.length ? "a branch with no PR: open a PR or park it" : "nothing started: start an agent, or park it with why";
+  }
+  const p = it.prs.find((x) => x.role === "mine" && x.draft);
+  if (p) return `#${p.number} is a draft: mark it ready or park it`;
+  if (it.prs.every((x) => x.state === "merge")) return "approved, waiting on a merge: merge it on GitHub or set a dependency";
+  return "open it to decide, or park it with why";
 }
 
 /** Numbers the Next queue: by step, then most urgent, then stalest. */
@@ -668,7 +687,7 @@ export function rankNext(items: WorkItem[]): WorkItem[] {
   const queue = items.filter((it) => steps.get(it.id)).sort((a, b) =>
     STEPS.indexOf(steps.get(a.id)!) - STEPS.indexOf(steps.get(b.id)!) || b.urgency - a.urgency || ts(a.updated) - ts(b.updated));
   const rank = new Map(queue.map((it, i) => [it.id, i + 1]));
-  return items.map((it) => (rank.has(it.id) ? { ...it, next: { rank: rank.get(it.id)!, step: steps.get(it.id)! } } : it));
+  return items.map((it) => (rank.has(it.id) ? { ...it, next: { rank: rank.get(it.id)!, step: steps.get(it.id)!, ...(steps.get(it.id) === "look" ? { why: lookWhy(it) } : {}) } } : it));
 }
 
 const LANE_ORDER: Lane[] = ["mine", "waiting", "asked", "parked"];

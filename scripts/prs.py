@@ -137,8 +137,41 @@ def age(s):
     return f"{d.seconds // 60}m"
 
 
-# Review bots that post as ordinary User accounts, so __typename can't catch them.
-BOT_LOGIN = re.compile(r"bot|^wiz-", re.I)
+def _settings_file():
+    """This project's settings file: CR_SETTINGS (the control room sets it), else the default project's in projects.json."""
+    if os.environ.get("CR_SETTINGS"):
+        return os.environ["CR_SETTINGS"]
+    base = os.path.expanduser("~/.config/control-room")
+    try:
+        with open(f"{base}/projects.json") as f:
+            return f"{base}/projects/{json.load(f)['default']}.json"
+    except (OSError, ValueError, KeyError, TypeError):
+        return f"{base}/config.json"
+
+
+SETTINGS_FILE = _settings_file()
+
+
+def _settings():
+    try:
+        with open(SETTINGS_FILE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+SETTINGS = _settings()
+
+
+def _bot_login():
+    # Review bots that post as ordinary User accounts, so __typename can't catch them. The Settings page edits the pattern.
+    try:
+        return re.compile((SETTINGS.get("prs") or {}).get("botPattern") or r"bot|^wiz-", re.I)
+    except re.error:
+        return re.compile(r"bot|^wiz-", re.I)
+
+
+BOT_LOGIN = _bot_login()
 # A bot's review body that reports nothing to fix.
 NOTHING_TO_ACT = re.compile(r"no actionable comments|actionable comments posted: 0|no issues found|lgtm", re.I)
 
@@ -548,17 +581,12 @@ def cmd_excluded(as_json=False):
 MARKS_FILE = os.path.expanduser("~/.claude/prs-marks.json")
 MARK_STATES = ("handed-off", "addressed")
 
-SETTINGS_FILE = os.environ.get("CR_SETTINGS") or os.path.expanduser("~/.config/control-room/config.json")
 PROJECT_OWNERS = {o.lower() for o in os.environ.get("CR_PROJECT_OWNERS", "").split(",") if o}
 
 
 def default_org():
     """The org a bare repo#123 means, from control room settings."""
-    try:
-        with open(SETTINGS_FILE) as f:
-            org = json.load(f).get("org")
-    except (OSError, ValueError):
-        org = None
+    org = SETTINGS.get("org")
     if not org:
         die(f"repo#123 needs an \"org\" in {SETTINGS_FILE}; use owner/repo#123", 2)
     return org

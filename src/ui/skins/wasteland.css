@@ -1,0 +1,102 @@
+/* Wasteland: the board on a dead terminal's green phosphor, after the end of the world. Dark rust-black ground, panes as
+   terminal windows, type in Share Tech Mono with VT323 for headings, faint scanlines over everything. What's yours in
+   sodium amber, what waits in phosphor green, what's asked of you in warning red. Its own fixed colours: the theme
+   doesn't change it. The World is framed in riveted rust, its chat a terminal. html:root[...] outranks the default
+   skin's own tokens. */
+html:root[data-skin="wasteland"] {
+  --rack:#0c110b; --rack-2:#090d08; --panel:#111a10; --panel-2:#172316; --ink:#b8f5b0; --ink-2:#7fd87a; --ink-3:#5a8f56;
+  --rule:#24381f; --rule-2:#1a2a17;
+  --s-mine:#2a2410; --s-wait:#12261a; --s-ask:#2e1512; --s-park:#151c14; --s-done:#16261a;
+  --h-mine:#ffb347; --h-wait:#5dff7a; --h-ask:#ff5a46; --h-park:#6a8a66; --h-done:#5dff7a;
+  --pencil:#ff5a46; --ok:#5dff7a; --warn:#ffb347; --bad:#ff5a46;
+  --strip-ink:#c8ffc0; --strip-ink-2:#8fd88a;
+  --shadow:0 0 0 1px rgba(93,255,122,.08), 0 2px 6px rgba(0,0,0,.5);
+  --lift:0 0 0 1px rgba(93,255,122,.25), 0 0 18px rgba(93,255,122,.12), 0 12px 30px rgba(0,0,0,.6);
+  --accent:#5dff7a; --accent-ink:#071007;
+  --wl-glow:0 0 6px rgba(93,255,122,.35);
+  color-scheme:dark;
+}
+[data-skin="wasteland"] body { font-family:'Share Tech Mono', ui-monospace, Menlo, monospace; background:radial-gradient(ellipse at 50% 40%, #121c10 0%, #0a0f09 60%, #050805 100%) fixed; }
+/* Scanlines and a vignette, over everything and never in the way. */
+[data-skin="wasteland"] body::after { content:""; position:fixed; inset:0; pointer-events:none; z-index:9999;
+  background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.16) 2px 3px), radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.45) 100%); }
+/* Not over the World: its view is drawn in its own light. */
+[data-skin="wasteland"] body:has(.world)::after { display:none; }
+[data-skin="wasteland"] .strip > .hold { padding:0; }
+[data-skin="wasteland"] h1, [data-skin="wasteland"] .strip .id b, [data-skin="wasteland"] .lifted .id b, [data-skin="wasteland"] .wide-head b, [data-skin="wasteland"] .wide-head .t { font-family:'Share Tech Mono', monospace; font-weight:400; text-shadow:var(--wl-glow); }
+/* Headings and lead-ins in the terminal's big type, uppercase. */
+[data-skin="wasteland"] .bay-h, [data-skin="wasteland"] .cols-h, [data-skin="wasteland"] .cols-h .cell, [data-skin="wasteland"] .cols-h .sorter, [data-skin="wasteland"] .pane h3, [data-skin="wasteland"] .loopline .st,
+[data-skin="wasteland"] .lifted .plan .st, [data-skin="wasteland"] .idmeta .kind, [data-skin="wasteland"] .st.label { font-family:VT323, 'Share Tech Mono', monospace; font-weight:400; font-size:1.15em; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); }
+/* The header: a rusted plate with a hazard stripe under it. */
+[data-skin="wasteland"] .top { background:linear-gradient(#2a1a10, #1a100a); border-bottom:4px solid transparent; border-image:repeating-linear-gradient(45deg, #e0b020 0 10px, #1a1714 10px 20px) 4; color:#f0d8a0; }
+[data-skin="wasteland"] .top .brand { color:#ffb347; font-family:VT323, monospace; font-size:1.35em; letter-spacing:.08em; text-transform:uppercase; text-shadow:0 0 8px rgba(255,179,71,.45); }
+[data-skin="wasteland"] .top .brand-project { background:#ffb347; color:#1a100a; }
+[data-skin="wasteland"] .top .ctr { background:#0c110b; color:var(--ink); border-color:#3a2a1a; }
+[data-skin="wasteland"] .top .ctr .l { color:var(--ink-3); }
+[data-skin="wasteland"] .top .iconbtn, [data-skin="wasteland"] .top .btn { background:transparent; color:#f0d8a0; border-color:rgba(240,216,160,.3); }
+[data-skin="wasteland"] .top .iconbtn:hover, [data-skin="wasteland"] .top .btn:hover, [data-skin="wasteland"] .top .iconbtn.on { background:#ffb347; color:#1a100a; border-color:#ffb347; }
+[data-skin="wasteland"] .top .st, [data-skin="wasteland"] .top .dim { color:#c8a878; }
+[data-skin="wasteland"] .top input { background:#0c110b; color:var(--ink); border-color:#3a2a1a; }
+[data-skin="wasteland"] .top kbd { background:rgba(0,0,0,.35); color:#f0d8a0; border-color:rgba(240,216,160,.3); }
+/* Buttons: square terminal keys that light up. */
+[data-skin="wasteland"] .btn, [data-skin="wasteland"] .iconbtn, [data-skin="wasteland"] .chip { border-radius:2px; }
+[data-skin="wasteland"] .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow:0 0 10px rgba(93,255,122,.35); }
+[data-skin="wasteland"] .btn.primary:hover { background:#8aff9a; }
+[data-skin="wasteland"] input, [data-skin="wasteland"] textarea, [data-skin="wasteland"] select { background:#070b06; color:var(--ink); border-color:var(--rule); caret-color:var(--accent); }
+[data-skin="wasteland"] kbd { background:#070b06; color:var(--ink-2); border-color:var(--rule); }
+/* Panes and the lifted item: terminal windows, a thin phosphor edge. */
+[data-skin="wasteland"] .pane, [data-skin="wasteland"] .lifted { border-radius:3px; border-color:var(--rule); }
+[data-skin="wasteland"] .strip.sel { box-shadow:0 0 0 1px var(--accent), 0 0 14px rgba(93,255,122,.25); }
+[data-skin="wasteland"] .strip .what span.need, [data-skin="wasteland"] .lifted .why b { color:#ff7a5a; }
+[data-skin="wasteland"] .cell.dim { color:rgba(184,245,176,.4); }
+[data-skin="wasteland"] .cell.pen { color:#ff7a5a; }
+[data-skin="wasteland"] .cell.ok { color:var(--ok); }
+[data-skin="wasteland"] .cell { border-left-color:rgba(93,255,122,.1); }
+[data-skin="wasteland"] .rank.blocking { background:#ff5a46; color:#1a0806; }
+[data-skin="wasteland"] .rank.important { background:#ffb347; color:#1a100a; }
+[data-skin="wasteland"] .rank.should-do { background:#e0d060; color:#141006; }
+[data-skin="wasteland"] .rank.nit { background:#24381f; color:var(--ink); }
+[data-skin="wasteland"] .console { background:#050805; color:var(--ink); border-color:var(--rule); text-shadow:var(--wl-glow); }
+[data-skin="wasteland"] .chat { background:#070b06; }
+[data-skin="wasteland"] .chat-msg.you .chat-body { background:#1c2a12; border-color:#2e4420; color:#e0ffd8; }
+[data-skin="wasteland"] .chat-msg.agent .chat-body { color:var(--ink); }
+[data-skin="wasteland"] ::selection { background:var(--accent); color:var(--accent-ink); }
+
+/* The World framed in riveted rust: the view drawn sharp, panels and chat as terminals. */
+[data-skin="wasteland"] .world {
+  --rock:linear-gradient(135deg, #3a2414, #24160c 40%, #3a2414 70%, #2a1a0e);
+  --well:#070b06; --paper:#070b06;
+  --frame:0 0 0 1px #000, 0 0 0 2px #6a4a2a, 0 0 0 3px #000; --stone:inset 1px 1px 0 #6a4a2a, inset -1px -1px 0 #120a06;
+  font:15px 'Share Tech Mono', ui-monospace, monospace; text-shadow:none; -webkit-font-smoothing:auto;
+}
+[data-skin="wasteland"] .world-view canvas { image-rendering:auto; }
+[data-skin="wasteland"] .world-tabs button { background:#1a100a; color:#ffb347; border-color:#000; text-shadow:none; font-family:VT323, monospace !important; font-size:18px; text-transform:uppercase; letter-spacing:.06em !important; }
+[data-skin="wasteland"] .world-tabs button:hover { color:#fff0c8; }
+[data-skin="wasteland"] .world-tabs button.on { background:#ffb347; color:#1a100a; box-shadow:0 0 10px rgba(255,179,71,.4); }
+[data-skin="wasteland"] .world-panel { color:var(--ink); }
+[data-skin="wasteland"] .world-panel h4 { color:#5dff7a; font-family:VT323, monospace !important; font-size:20px; text-transform:uppercase; letter-spacing:.06em !important; text-shadow:var(--wl-glow); }
+[data-skin="wasteland"] .world-panel > button { color:var(--ink); text-shadow:none; }
+[data-skin="wasteland"] .world-panel > button.mine { color:#ffb347; } [data-skin="wasteland"] .world-panel > button.asked { color:#ff5a46; }
+[data-skin="wasteland"] .world-panel > button:hover { color:#fff; }
+[data-skin="wasteland"] .world-panel .none { color:#5dff7a; }
+[data-skin="wasteland"] .world-opts button, [data-skin="wasteland"] .world-close { background:#1a100a; color:#ffb347; text-shadow:none; }
+[data-skin="wasteland"] .world-opts button.on { color:#5dff7a; }
+[data-skin="wasteland"] .world-chat { color:var(--ink); text-shadow:var(--wl-glow); }
+[data-skin="wasteland"] .world-log .blue { color:#5dff7a; } [data-skin="wasteland"] .world-log .red { color:#ff5a46; } [data-skin="wasteland"] .world-log .you { color:#ffb347; }
+[data-skin="wasteland"] .world-convo .who { background:linear-gradient(#070b06, rgba(7,11,6,.92)); }
+[data-skin="wasteland"] .world-convo .who b, [data-skin="wasteland"] .world-convo .lbl, [data-skin="wasteland"] .world-convo .who button { color:#ffb347; }
+[data-skin="wasteland"] .world-convo .who span { color:var(--ink-3); }
+[data-skin="wasteland"] .world-convo .ctx, [data-skin="wasteland"] .world-convo .recap { color:var(--ink); border-color:var(--rule); }
+/* Skills as gauges: a bar filling amber as each levels. */
+[data-skin="wasteland"] .world-stats .stat { background:linear-gradient(to right, rgba(255,179,71,.28) var(--fill, 0%), #0c110b var(--fill, 0%)); border-color:#24381f; box-shadow:none; }
+[data-skin="wasteland"] .world-stats .stat .n, [data-skin="wasteland"] .world-stats .stat .lv { color:var(--ink); text-shadow:none; }
+[data-skin="wasteland"] .world-total { color:#ffb347; }
+[data-skin="wasteland"] .world-how { color:var(--ink-3); }
+[data-skin="wasteland"] .world-xpbox { background:#0c110b; border:1px solid #5dff7a; color:#5dff7a; text-shadow:var(--wl-glow); }
+[data-skin="wasteland"] .world-menu { background:#070b06; border-color:#5dff7a; }
+[data-skin="wasteland"] .world-menu-h { background:#5dff7a; color:#071007; }
+[data-skin="wasteland"] .wl-name { color:#f0e8d0; text-shadow:0 1px 2px #000; }
+[data-skin="wasteland"] .wl-chat { color:#ffb347; text-shadow:0 1px 2px #000; }
+[data-skin="wasteland"] .wl-area, [data-skin="wasteland"] .wl-task { background:rgba(7,11,6,.78); color:var(--ink); border:1px solid rgba(93,255,122,.2); }
+[data-skin="wasteland"] .wl-area .h, [data-skin="wasteland"] .wl-task.wl-open .h { color:#5dff7a; }
+[data-skin="wasteland"] .wl-task.wl-open { background:rgba(7,11,6,.92); border-color:#5dff7a; }

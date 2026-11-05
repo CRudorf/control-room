@@ -1,16 +1,17 @@
 import { projectRepos, tuned } from "./repos";
 // Suggestions (GLOSSARY: Suggestion): work the control room proposes to the user before it is a work
-// item. Jira To Do issues come from jira.py suggest every JIRA_EVERY_MS; architecture candidates
+// item. Jira To Do issues come from jira.py suggest on the Jira interval; architecture candidates
 // come from files a weekly agent writes. A model judges each morning whether an issue's links leave
 // it free to start. Picking one up assigns it, moves it to In Progress and starts an agent.
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Suggestion, SuggestionsView, SuggestSource, Verdict, WorkItem } from "../shared/types";
-import { JIRA, JIRA_EVERY_MS, POLL, ROOT, STATE_DIR } from "./config";
+import { JIRA, POLL, ROOT, STATE_DIR } from "./config";
+import { every } from "./every";
 import { load, save } from "./db";
 import { isDev, note, read, type Ctx } from "./runner";
-import { SETTINGS } from "./settings";
+import { SETTINGS, tuning } from "./settings";
 import { assignToMe, moveIssue } from "./jira";
 import { assignIssue, repoOfKey, syncTracker, trackerKind } from "./tracker";
 import { prFacts } from "./history";
@@ -18,7 +19,6 @@ import { weekOf } from "./metrics";
 
 export const ARCH_DIR = join(STATE_DIR, "arch");
 const ORDER: SuggestSource[] = ["a", "b", "c", "d", "architecture"];
-const MORNING_HOUR = 7;
 
 type Dismissed = Record<string, { reason: string; fp: string; at: string }>;
 type Verdicts = { at: string | null; byKey: Record<string, { verdict: Verdict; of: string | null; reason: string }> };
@@ -305,7 +305,7 @@ export function startSuggestions(items: () => WorkItem[], changed: () => void, a
   const tick = async () => {
     await syncSuggestions();
     const now = new Date();
-    if (now.getHours() >= MORNING_HOUR) {
+    if (now.getHours() >= tuning.suggestionsFrom()) {
       const day = now.toDateString();
       if (load<string>("suggest_judged_day") !== day) { save("suggest_judged_day", day); await judgeSuggestions("schedule"); }
       if (now.getDay() === 1 && load<ArchRun>("suggest_arch")?.week !== weekOf(now.toISOString()))
@@ -314,7 +314,7 @@ export function startSuggestions(items: () => WorkItem[], changed: () => void, a
     changed();
   };
   void tick();
-  setInterval(() => void tick(), JIRA_EVERY_MS);
+  every(tuning.jiraMs, () => void tick());
 }
 
 /** Tests only: set the fetched Jira suggestions and the board. */

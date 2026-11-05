@@ -1,6 +1,7 @@
 // `bun run item`: one work item as short plain text, for agents to read in one go.
 import type { Lane, PrRow, WorkItem } from "../shared/types";
 import type { Lesson } from "./lessons";
+import { standalone } from "./since";
 
 const LANE: Record<Lane, string> = { mine: "my turn", waiting: "waiting on others", asked: "asked of me", parked: "parked" };
 const short = (repo: string) => repo.split("/").pop()!;
@@ -29,7 +30,7 @@ function prLines(p: PrRow): string[] {
   const out = [
     `${short(p.repo)}#${p.number} "${clip(p.title, 90)}" ${p.url}`,
     `  ${p.draft ? "draft, " : ""}${p.state && p.state !== "draft" ? `${p.state}, ` : ""}CI ${p.checks || "none"}, ${review}${waiting}, merge ${p.can_merge}`,
-    `  branch ${p.branch} into ${p.base}${p.merge_state === "DIRTY" ? ", conflicts" : ""}${p.behind_by ? `, ${p.behind_by} behind` : ""}${p.stack ? `, stacked on ${p.stack.on}` : ""}`,
+    `  branch ${p.branch} into ${p.base}${p.merge_state === "DIRTY" ? ", conflicts" : ""}${p.behind_by ? `, ${p.behind_by} behind` : ""}, ${standalone(p)}`,
   ];
   if (failing) out.push(`  failing checks: gh pr checks ${p.number} -R ${p.repo}`);
   const fb = (p.feedback ?? []).map((f) => `${f.who}${f.bot ? " (bot)" : ""}${f.where ? ` at ${f.where}` : ""}: ${clip(f.body, 200)}`);
@@ -43,9 +44,23 @@ function prLines(p: PrRow): string[] {
   return out;
 }
 
+/**
+ * What a session started on a branch is told: a warning first when another live session already owns the
+ * branch, then the item's view. Pure.
+ */
+export function sessionContext(it: WorkItem, branch: string, session: string, view: string): string {
+  const others = it.agents.filter((a) => a.session !== session && (a.branch === branch || a.upstream === branch) && a.status !== "done");
+  const warn = others.length
+    ? `Another session already owns branch ${branch}: ${others.map((a) => `${a.name ?? a.label} (${a.status})`).join(", ")}. Before changing anything, tell the user and ask whether to continue there instead; two sessions pushing one branch collide.\n\n`
+    : "";
+  return `${warn}This session is on work item ${it.key}. Its board view:\n\n${view}`;
+}
+
 /** The plain-text view: key and lane, PRs with their status and open feedback, the loop, lessons, agents. */
 export function formatItem(it: WorkItem, lessons: Lesson[], checks: string[] = []): string {
   const out = [`${it.key} (${it.title ? clip(it.title, 100) : it.keyKind}): ${LANE[it.lane]}, ${it.why}`];
+  if (it.since) out.push(`Since the user last looked: ${it.since.replace(/^since [^:]+: /, "")}`);
+  if (it.notes?.length) out.push("Decisions (follow them, don't reopen):", ...it.notes.map((n) => `- ${clip(n.text, 240)}`));
   if (it.jira) out.push(`Jira: ${it.jira.status} ${it.jira.url}`);
   if (it.park) out.push(`Parked: ${clip(it.park.note, 160)}${it.park.until ? ` until ${it.park.until}` : ""}`);
   if (it.commentWait) out.push(it.commentWait.woke ? `Wait for a comment ended: ${clip(it.commentWait.woke, 160)}` : "Waiting for a comment on the ticket");

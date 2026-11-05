@@ -1,5 +1,7 @@
 // Machine health: memory per herdr pane (everything running under its shell) and how much the
 // machine has free, so a heavy tab can be closed before macOS starts killing dev stacks.
+import { tuning } from "./settings";
+
 const sh = async (cmd: string[]) => {
   const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore" });
   const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
@@ -36,8 +38,7 @@ export function treeMb(pid: number, t: Awaited<ReturnType<typeof processTree>>):
 
 export type Machine = { totalGb: number; freePct: number | null; low: boolean };
 
-// Below this, macOS starts compressing and swapping hard, and dev stacks were killed before.
-export const LOW_FREE_PCT = 15;
+// Below the Settings page's low-memory line (15% by default), macOS starts compressing and swapping hard, and dev stacks were killed before.
 let machineCache: { at: number; m: Machine } | null = null;
 
 /** Total memory and macOS's own "memory free percentage". Cached for a minute. */
@@ -46,7 +47,7 @@ export async function machine(): Promise<Machine> {
   const total = Number((await sh(["sysctl", "-n", "hw.memsize"])).trim()) || 0;
   const pct = (await sh(["memory_pressure", "-Q"])).match(/free percentage: (\d+)%/)?.[1];
   const freePct = pct ? Number(pct) : null;
-  const m = { totalGb: Math.round(total / 2 ** 30), freePct, low: freePct !== null && freePct < LOW_FREE_PCT };
+  const m = { totalGb: Math.round(total / 2 ** 30), freePct, low: freePct !== null && freePct < tuning.lowMemoryPct() };
   machineCache = { at: Date.now(), m };
   return m;
 }

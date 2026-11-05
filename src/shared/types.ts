@@ -90,9 +90,12 @@ export type AgentStatus = "idle" | "working" | "blocked" | "done" | "unknown";
 
 /** A Claude session in a herdr pane. */
 export type Agent = {
+  /** Unique across machines: an agent on another machine's herdr is "<machine>/<its pane id>". */
   pane: string;
   tab: string;
   workspace: string;
+  /** The machine from Settings it runs on; null on this Mac. */
+  machine?: string | null;
   name: string | null;
   label: string;
   title: string;
@@ -144,8 +147,12 @@ export type Routine = {
   enabled: boolean;
   /** What the control room writes before the agent starts, for the prompt to read. "sessions": the friction review's session index. */
   brief?: "sessions";
+  /** "local": only this Mac. Absent: the first machine in Settings that's ready, else this Mac. A "sessions" brief always runs here, where the sessions are. */
+  runOn?: "local";
 };
-export type RoutineRun = { period: string; at: string; trigger: string; agents: { repo: string; name: string; dryRun: boolean }[]; error: string | null };
+export type RoutineRun = { period: string; at: string; trigger: string; error: string | null;
+  /** `machine`: where it started, null on this Mac. `fellBack`: why it didn't start on a machine from Settings. */
+  agents: { repo: string; name: string; dryRun: boolean; machine?: string | null; fellBack?: string }[] };
 
 /** A session drawn as a conversation (transcript.ts): the user, the agent, a run of tool calls, or a recap. */
 export type ChatEntry = { id: string; kind: "user" | "agent" | "tools" | "recap"; text: string; at: string | null; tools?: { id: string; line: string; failed?: boolean }[] };
@@ -169,7 +176,7 @@ export type ReviewDrafts = { pr: string; sha: string; findings: Draft[]; posted:
 export type Cell = { text: string; tone: "" | "pen" | "ok" | "dim"; proof?: string };
 
 /** The Next queue's steps, in order: unblock agents, start agents, quick acts, check agents' work, the rest. */
-export type NextStep = "answer" | "start" | "quick" | "check" | "look" | "pickup";
+export type NextStep = "answer" | "start" | "quick" | "post" | "check" | "look" | "pickup";
 
 /** GLOSSARY: Suggestion. a: active sprint, b: container sprints, c: labelled backlog, d: other backlog. */
 export type SuggestSource = "a" | "b" | "c" | "d" | "architecture";
@@ -228,7 +235,7 @@ export type WorkItem = {
   cells: { fb: Cell; ci: Cell; rv: Cell; mg: Cell; ag: Cell };
   primary: PrimaryAction;
   /** Its place in the Next queue, and which step of the ranking put it there. Absent: nothing for the user to do now. */
-  next?: { rank: number; step: NextStep };
+  next?: { rank: number; step: NextStep; why?: string };
   related: string[];
   /** Set while the user waits on the author; `woke` says what ended the wait. */
   hold?: Hold & { woke: string | null };
@@ -256,9 +263,18 @@ export type WorkItem = {
   guide?: GuideView[];
   /** Remote branches named with its Jira key (GLOSSARY: Branch). */
   branches?: ItemBranch[];
+  /** Known-broken CI in its repos (server/broken.ts). */
+  broken?: { repo: string; note: string; setAt: string }[];
+  /** Decisions the user settled on it (server/notes.ts), oldest first; every session on it is told them. */
+  notes?: ItemNote[];
+  /** What changed on its PRs since the user last looked at it, or that nothing did (server/since.ts). */
+  since?: string;
   /** Its Jira issue, when the board has heard from Jira, and a status change to suggest. */
   jira?: { status: string; url: string; summary: string; suggest: Suggested | null; parent?: { key: string; summary: string } | null };
 };
+
+/** A decision on a work item. `by`: "user", or an agent's name when one recorded it. */
+export type ItemNote = { id: number; item: string; at: string; text: string; by: string };
 
 /** A reply to a person's review thread that a loop agent drafted, for the user to send. */
 export type HeldReply = { reply_to: number; thread_id: string; who: string; body: string; resolve: boolean };

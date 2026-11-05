@@ -14,12 +14,12 @@ import { revertsByRepo, features, friction, historyNotReady, quality, stageTimes
 import { allLessons, dueStick, goneLessons, markStick, removeLesson, stickPrompt } from "./lessons";
 import { bounces } from "./product";
 import { qualityRecords, shipped } from "./shipped";
+import { tuning } from "./settings";
 
 export const LOOP_DIR = join(STATE_DIR, "loop");
 const CHECK_MS = 3_600_000;
-// Local hours the loop may start in: the first weekday morning of the week, or the next one if
-// the control room was off.
-const FROM_HOUR = 9, UNTIL_HOUR = 12;
+// The loop starts on the first weekday morning of the week, or the next one if the control room was
+// off, inside the local hours on the Settings page (9 to 12 by default).
 
 type LastRun = { week: string; at: string; agent: string | null; error: string | null };
 
@@ -150,12 +150,12 @@ export function loopState() {
   return { last, pulse: load<Record<string, number>>("pulse")?.[weekOf(new Date().toISOString())] ?? null, report: newest ? { week: newest.slice(0, 10), text: readFileSync(join(LOOP_DIR, newest), "utf8") } : null };
 }
 
-/** Runs the loop once a week, on the first weekday morning check between FROM_HOUR and UNTIL_HOUR. */
+/** Runs the loop once a week, on the first weekday morning check inside the Settings page's window. */
 export function startLoop() {
   if (DEV) return;
   const check = () => {
     const now = new Date();
-    if (now.getDay() % 6 === 0 || now.getHours() < FROM_HOUR || now.getHours() >= UNTIL_HOUR) return;
+    if (now.getDay() % 6 === 0 || now.getHours() < tuning.loopFrom() || now.getHours() >= tuning.loopUntil()) return;
     // A failed start retries on the next check; a started one waits for next week.
     const last = load<LastRun>("loop_last");
     if (last?.week === weekOf(now.toISOString()) && !last.error) return;

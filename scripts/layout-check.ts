@@ -43,7 +43,8 @@ const CHECK = `(() => {
   const BLOCKS = "button, a.btn, .console, .keybar, .reply, .meta, .typehint, input, textarea, select, table, .chip, h1, h3, .txt, .why";
   for (const box of document.querySelectorAll(".pane, .lifted, .sess-row, .tidy-head, .wide-head, .panetabs, header.top, .sheet, .vfilters, .vcard, .vv-head, .vzoom")) {
     if (!vis(box)) continue;
-    const els = [...box.querySelectorAll(BLOCKS)].filter(vis).filter((e) => !e.closest(".console") || e.classList.contains("console"));
+    // Minimap dots sit where the board puts them, so items in one part of the map touch; that is the map, not a broken layout.
+    const els = [...box.querySelectorAll(BLOCKS)].filter(vis).filter((e) => !e.closest(".console") || e.classList.contains("console")).filter((e) => !e.classList.contains("mm-dot"));
     const rs = els.map((e) => e.getBoundingClientRect());
     for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
       if (els[i].contains(els[j]) || els[j].contains(els[i])) continue;
@@ -79,10 +80,15 @@ async function cdp(width: number, height: number) {
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
-  const server = Bun.spawn(["bun", "src/server/main.ts"], { cwd: ROOT, env: { ...process.env, CR_DEV: "1", CR_PORT: String(PORT) }, stdout: "ignore", stderr: "ignore" });
+  // The dev server's output is kept: when it dies, that's the failure to report, not the layout.
+  const serverLog = join(OUT, "server.log");
+  const server = Bun.spawn(["bun", "src/server/main.ts"], { cwd: ROOT, env: { ...process.env, CR_DEV: "1", CR_PORT: String(PORT) }, stdout: Bun.file(serverLog), stderr: Bun.file(serverLog) });
   const failures: string[] = [];
+  const died = async () => (server.exitCode !== null ? `the dev server exited (${server.exitCode}):\n${(await Bun.file(serverLog).text()).split("\n").slice(-25).join("\n")}` : null);
   try {
-    for (let i = 0; i < 80; i++) { try { await fetch(`http://127.0.0.1:${PORT}/`); break; } catch { await Bun.sleep(250); } }
+    let up = false;
+    for (let i = 0; i < 80 && server.exitCode === null; i++) { try { await fetch(`http://127.0.0.1:${PORT}/`); up = true; break; } catch { await Bun.sleep(250); } }
+    if (!up) throw new Error((await died()) ?? `the dev server didn't answer on ${PORT}; its log: ${serverLog}`);
     const boot = Bun.spawnSync(["bun", "-e", 'import {bootstrapUrl} from "./src/server/security"; console.log(bootstrapUrl())'], { cwd: ROOT, env: { ...process.env, CR_DEV: "1", CR_PORT: String(PORT) } });
     const url = boot.stdout.toString().trim();
     if (!url.startsWith("http")) throw new Error(`no bootstrap url: ${boot.stderr.toString().trim()}`);
@@ -124,7 +130,8 @@ async function main() {
           const by = (f) => [...s.items].sort((a, b) => f(b) - f(a))[0]?.id;
           return [...new Set([by((i) => i.prs.length), by((i) => i.agents.length), s.items.find((i) => i.keyKind === "review")?.id].filter(Boolean))]
             .filter((id) => document.querySelector('[data-item="' + id + '"]'));
-        })`)) ?? [];
+        })`));
+        if (!Array.isArray(ids)) { failures.push(`${w}px: couldn't read the board's work items${(await died()) ? `: ${await died()}` : ` (server log: ${serverLog})`}`); continue; }
         for (const id of ids) {
           await b.evaluate(`document.querySelector('[data-item="${id}"]').click()`);
           await look(`item ${id}`);

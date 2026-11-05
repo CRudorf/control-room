@@ -5,10 +5,9 @@ import type { Agent, HeldReply, LoopCheck, LoopView, PrRow, Reason, WorkItem } f
 import { prRef } from "../shared/types";
 import { isFinished } from "./workitems";
 import { describe, type Flag } from "./risk";
+import { tuning } from "./settings";
 
-export const MAX_ROUNDS = 3;
-export const MAX_NEW_AGENTS = 3;
-const ROUND_TIMEOUT_MS = 3 * 3600_000;
+// Rounds per PR, agents started per cycle and a round's time limit are on the Settings page (settings.ts).
 // A new agent's tab takes a moment to show on the board.
 const AGENT_GRACE_MS = 5 * 60_000;
 
@@ -129,7 +128,7 @@ export function decide(items: WorkItem[], loops: Loops, ctx: Ctx): { loops: Loop
           stop(`agent pushed a fix with no passing check${checks.length ? `: ${checks.map((c) => `${c.cmd} exited ${c.exit}`).join(", ")}` : ""}`);
         // Feedback can be answered without code; CI that still fails can't.
         else if (!report.head && r.kind === "ci") stop(`agent couldn't fix CI${report.summary ? `: ${report.summary}` : ""}`);
-      } else if (ctx.now - Date.parse(r.at) > ROUND_TIMEOUT_MS) stop("round ran over 3 hours without a report");
+      } else if (ctx.now - Date.parse(r.at) > tuning.roundMs()) stop(`round ran over ${tuning.roundMs() / 3_600_000} hours without a report`);
       else if (r.pane && !a && ctx.now - Date.parse(r.at) > AGENT_GRACE_MS) stop("the round's agent closed before it reported");
       else if (a && a.status !== "working" && a.status !== "blocked" && (isFinished(a) || a.status === "idle") && ctx.now - Date.parse(r.at) > 60_000)
         stop(`agent ${name(a)} stopped without a report`);
@@ -148,8 +147,8 @@ export function decide(items: WorkItem[], loops: Loops, ctx: Ctx): { loops: Loop
       if (!flags) return; // still checking
       const unapproved = flags.filter((f) => !l.approved.includes(f.file));
       if (unapproved.length) return stop(`high risk: ${describe(unapproved)}`, true);
-      if (l.rounds >= MAX_ROUNDS) return stop(`${MAX_ROUNDS} rounds and it still isn't through review`);
-      if (!owner && (starts >= MAX_NEW_AGENTS || ctx.lowMemory)) return; // waits for room
+      if (l.rounds >= tuning.reviewRounds()) return stop(`${tuning.reviewRounds()} rounds and it still isn't through review`);
+      if (!owner && (starts >= tuning.newPerCycle() || ctx.lowMemory)) return; // waits for room
       if (!owner) starts++;
       l.round = { kind, at: new Date(ctx.now).toISOString(), head: p.head, pane: owner?.pane ?? null, agent: owner ? name(owner) : null, started: !owner, keys, changes };
       if (kind === "feedback") l.seen.push(...keys);

@@ -24,7 +24,9 @@
 
 **Investigation**: An agent working one error report to its root cause, in a tab labelled `rca <short id>`. It is that report's work item, and a fix PR naming the report joins it. A routine's triage can start one per pick.
 
-**Routine**: A prompt the control room starts on its own in each of its repos, daily or weekly: at a set time, or when the user starts work (the first time that day they're at the machine). With no prompt it runs `/signal-to-pr` bare, a triage of the repo's live errors. Set on the Routines page.
+**Routine**: A prompt the control room starts on its own in each of its repos, daily or weekly: at a set time, or when the user starts work (the first time that day they're at the machine). With no prompt it runs `/signal-to-pr` bare, a triage of the repo's live errors. Set on the Routines page. It starts on the first ready Machine, else on this Mac, unless it is set to this Mac only.
+
+**Machine**: Another computer that runs agents, set on the Settings page: its own herdr, reached over ssh, with its own clones. Its agents show on the board tagged with its name. It is ready for a repo when it is reachable, has the clone, and Claude there trusts the folder. Avoid: remote, box (that's one machine's name).
 
 **Friction review**: The routine every control room starts with, weekly on Friday when the user starts work. Its agent reads every session tied to a work item, with how each item moved on the board, and reports candidates that would take friction out of a work item's workflow, one card each the way an architecture review does. It changes nothing; the user picks one to explore. Avoid: retro.
 
@@ -47,6 +49,16 @@
 **Primary action**: The one move a work item offers on ⏎, chosen by what's most urgent on it.
 
 **Action record**: What the control room keeps about every write it makes for the user: why, what was drafted versus sent, and what happened next.
+
+**Decision**: Something the user settled about a work item: a scope cut, "don't do X", a name, a choice. Kept on the item, added on the board or by an agent with `bun run item <key> --note`, and given to every session started on the item, so a /clear, a compaction or a handoff can't lose it. Avoid: handoff note.
+
+**Since you looked**: The line on a work item that says what changed on its PRs since the user last opened it (new threads, pushes, CI, conflicts, review decisions), or that nothing did. Agents read the same line in the item lookup instead of polling GitHub.
+
+**Known-broken CI**: One cause that fails a check on every PR in a repo, noted once on the board. While it stands, those failures ask nothing of the user and agents leave them alone; clearing it when the fix lands updates every PR it held up.
+
+**Re-check**: A review of only what changed since an earlier review's commit, in the session that holds it, checked against the findings already drafted or posted. A new head after a review always gets a re-check, never a review from scratch.
+
+**Run recipe**: How to run a repo locally (env, seed data, the URL to open, auth first), kept in the project's private tuning and given to every agent on the repo. An agent that works it out saves it with `bun run item <key> --recipe`.
 
 **Mark**: A local note that GitHub can't express: `handed-off` (an agent has it) or `addressed` (the reviewer knows). Cleared when newer feedback arrives.
 

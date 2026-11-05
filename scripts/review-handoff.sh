@@ -32,7 +32,12 @@ resolve() {
     echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}"
   elif [[ "$ref" =~ ^([^/#]+)#([0-9]+)$ ]]; then
     local org
-    org=$(jq -r '.org // empty' ~/.config/control-room/config.json 2>/dev/null) || true
+    local settings="${CR_SETTINGS:-}" project
+    if [[ -z "$settings" ]]; then
+      project=$(jq -r '.default // empty' ~/.config/control-room/projects.json 2>/dev/null) || true
+      settings=~/.config/control-room/projects/${project:-none}.json
+    fi
+    org=$(jq -r '.org // empty' "$settings" 2>/dev/null) || true
     [[ -n "$org" ]] || return 1
     echo "$org ${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"
   elif [[ "$ref" =~ ^#?([0-9]+)$ ]]; then

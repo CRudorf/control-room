@@ -9,6 +9,10 @@ const ref = (p: PrRow) => `${p.repo}#${p.number}`;
 /** Shows a line at the bottom of the screen (App listens). */
 export const toast = (msg: string) => window.dispatchEvent(new CustomEvent("cr-toast", { detail: msg }));
 
+/** What opening an agent did, for a toast: raised herdr's terminal here, or focused it in another machine's herdr. */
+export const focusText = (r: { error?: string; app?: string | null; machine?: string; attach?: string }, what = "it") =>
+  r.error ? `Couldn't open: ${r.error}` : r.machine ? `${what} is on ${r.machine}: focused there; see it with ${r.attach}` : r.app ? `Opened ${what} in ${r.app}` : "Focused in herdr; no terminal window found to raise";
+
 export const post = (path: string, body: object) =>
   fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
     .then((x) => x.json()).catch(() => ({ error: "server unreachable" }));
@@ -86,7 +90,7 @@ function ThreadTask({ it, f, onUse }: { it: WorkItem; f: Feedback; onUse: (reply
   const t = f.task;
   if (!t) return null;
   const a = it.agents.find((x) => (x.name ?? x.label) === t.agent);
-  const show = () => a && post("/api/agent/focus", { pane: a.pane }).then((r) => toast(r.error ? `Couldn't open: ${r.error}` : `Opened ${t.agent}`));
+  const show = () => a && post("/api/agent/focus", { pane: a.pane }).then((r) => toast(focusText(r, t.agent)));
   if (!t.result) {
     const working = a?.status === "working";
     return (

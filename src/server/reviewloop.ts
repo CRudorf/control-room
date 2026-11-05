@@ -10,6 +10,8 @@ import { note, read } from "./runner";
 import { postReplies, rerequest, rerunCi, restack, updateBranch } from "./actions";
 import { sendToAgent } from "./herdr";
 import { startAgent, withLookup } from "./handoff";
+import { notesFor } from "./notes";
+import { brokenFor, brokenPrompt } from "./broken";
 import { riskOf } from "./risk";
 import { decide, type LoopPr, type Loops, type Report, type Step } from "./cycle";
 
@@ -55,7 +57,7 @@ async function exec(s: Step, p: PrRow) {
   if (s.do !== "round") return;
   const file = reportFile(s.ref);
   rmSync(file, { force: true });
-  const prompt = withLookup(s.kind === "ci" ? ciPrompt(p, file) : await sh(["python3", PRS, "prompt", s.ref, "--loop", file, ...(DEV ? ["--no-mark"] : [])]), s.item);
+  const prompt = withLookup(s.kind === "ci" ? ciPrompt(p, file) : await sh(["python3", PRS, "prompt", s.ref, "--loop", file, ...(DEV ? ["--no-mark"] : [])]), s.item, notesFor([s.item])) + brokenPrompt(brokenFor(p.repo));
   const l = loops[s.ref];
   if (s.pane) {
     await sendToAgent(s.pane, prompt, s.item, "loop");

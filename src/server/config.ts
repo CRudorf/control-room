@@ -26,8 +26,5 @@ export const ROOT = resolve(import.meta.dir, "../..");
 export const PRS = join(ROOT, "scripts", "prs.py");
 export const JIRA = join(ROOT, "scripts", "jira.py");
 
-export const DETECT_EVERY_MS = 2 * 60_000;
-export const RECONCILE_EVERY_MS = 20 * 60_000;
-export const JIRA_EVERY_MS = 10 * 60_000;
 
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });

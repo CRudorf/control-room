@@ -2,7 +2,7 @@ import { AnimatePresence, LayoutGroup, motion, MotionConfig } from "motion/react
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, AgentTask, Cell, HandoffTask, Lane, LoopView, PrRow, Snapshot, Suggested, WorkItem } from "../shared/types";
 import { useFeed } from "./feed";
-import { act, Confirm, PrActions, RerequestSheet, Threads, toast } from "./actions";
+import { act, Confirm, focusText, PrActions, RerequestSheet, Threads, toast } from "./actions";
 import { ChartButton, useVisuals, VisualStrip } from "./visuals";
 import { EffortChip, EffortLines } from "./effort";
 import { SIZE_LABEL, type EffortSize } from "../shared/effort";
@@ -88,7 +88,7 @@ const MORE: { p: Page; label: string; k: string; title: string }[] = [
   { p: "history", label: "History", k: "h", title: "Everything the control room did" },
   { p: "removed", label: "Removed", k: "e", title: "The editable remove list" },
   { p: "world", label: "World", k: "w", title: "Walk round a town of your work" },
-  { p: "settings", label: "Settings", k: ",", title: "Skin and theme" },
+  { p: "settings", label: "Settings", k: ",", title: "Skin, theme, project, polling, agents and schedule" },
 ];
 const PAGE_KEYS: Record<string, Page> = { v: "finished", c: "sessions", i: "metrics", d: "docs", t: "tidy", h: "history", e: "removed", u: "cleanup", q: "routines", ",": "settings" };
 
@@ -408,7 +408,7 @@ export function App() {
               onBuilding={(b) => { if (b === "next") { back(); setNextMode(true); setCur(null); } else open(b); }} />
           </Suspense>
         ) : page === "settings" ? (
-          <Settings theme={theme} setTheme={setTheme} skin={skin} setSkin={setSkin} onClose={back} />
+          <Settings theme={theme} setTheme={setTheme} skin={skin} setSkin={setSkin} onClose={back} onOpen={open} />
         ) : tidy ? (
           <Tidy onClose={back} />
         ) : hist ? (
@@ -526,7 +526,7 @@ const KEYS: [string, string][] = [
   ["p", "park the selected item (again to unpark)"], ["x", "remove the selected item's PRs"], ["b", "dependency a PR on another PR or a step"], ["l", "move a PR into another item, or out"], ["o", "take over someone else's PR (review requests)"], ["e", "Removed: the remove list"],
   ["/", "filter by text"], ["g", "group by lane, repo or effort (your work to ship, in points)"], ["f", "focus mode"], ["z", "expand a pane to the whole work area (again, or esc, for the default view)"],
   ["a", "start an agent on the selected item"], ["m", "mark the selected item's feedback addressed"], ["w", "wait on the author (review requests)"], ["⌘⏎", "start it, from the agent sheet"],
-  ["t", "Tidy herdr tabs"], ["q", "Routines: daily and weekly runs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: skin and theme"], ["w", "World, under the Old School RS skin"], ["r", "refresh from GitHub now"],
+  ["t", "Tidy herdr tabs"], ["q", "Routines: daily and weekly runs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: look, project, PRs, polling, agents, schedule"], ["w", "World, under the Old School RS skin"], ["r", "refresh from GitHub now"],
   ["?", "this list"], ["esc", "back / clear filters"],
 ];
 
@@ -621,7 +621,7 @@ function Strip({ it, sel, unseen, onClick }: { it: Group["items"][number]; sel: 
       <Running kinds={runs} />
       <div className="hold" />
       <div className="id"><b>{it.key}</b><span className="prs">{ids}</span><EffortChip it={it} />{it._also?.length ? <div className="also">also in {it._also.join(", ")}</div> : null}</div>
-      <div className="what"><b>{it.title}</b><span className={it.lane === "mine" ? "need" : ""}>{it.why}</span></div>
+      <div className="what"><b>{it.title}</b><span className={it.lane === "mine" ? "need" : ""}>{it.why}</span>{it.since && <span className="since">{it.since}</span>}</div>
       <div className="cells">
         <CellView c={it.cells.fb} /><CellView c={it.cells.ci} /><CellView c={it.cells.rv} /><CellView c={it.cells.mg} /><CellView c={it.cells.ag} />
         {it.last ? <span className="cell stale" title={`${it.last.what}${it.last.now ? "" : `, ${new Date(it.last.at).toLocaleString()}`}`}>{it.last.now ? "now" : ago(it.last.at)}</span> : <span className="cell stale dim">—</span>}
@@ -646,7 +646,7 @@ export function runPrimary(it: WorkItem) {
 async function focusAgent(pane: string): Promise<string> {
   const r = await fetch("/api/agent/focus", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pane }) })
     .then((x) => x.json()).catch(() => ({ error: "server unreachable" }));
-  return r.error ? `Couldn't open: ${r.error}` : r.app ? `Opened in ${r.app}` : "Focused in herdr; no terminal window found to raise";
+  return focusText(r);
 }
 
 type Wide = "prs" | "feedback" | "agent";
@@ -679,6 +679,12 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
     }, 1000);
     return () => clearInterval(t);
   }, [it?.id, finishedKey]);
+  // Three seconds on a work item counts as looking at it: its "since you looked" line starts from now.
+  useEffect(() => {
+    if (!it) return;
+    const t = setTimeout(() => { if (document.hasFocus()) void post("/api/seen", { item: it.id }); }, 3000);
+    return () => clearTimeout(t);
+  }, [it?.id]);
   const visuals = useVisuals(it?.key ?? null).list ?? [];
   if (!it) return <div className="detail"><div className="empty">Nothing selected.</div></div>;
   const threads = it.prs.flatMap((p) => (p.feedback ?? []).map((f) => ({ ...f, p })));
@@ -742,6 +748,9 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
           {it.prs.filter((p) => p.taken_over).map((p) => <span key={p.number} className="note">#{p.number} taken over from {p.taken_over!.from}</span>)}
         </div>
         <div><h1>{it.title}</h1><div className="why">{it.lane === "mine" ? <b>{it.why}</b> : it.why}</div>
+          {it.since && <div className="since st">{it.since}</div>}
+          <Notes it={it} />
+          <BrokenLines it={it} />
           {it.stopChecks?.map((c) => c.running ? <div key={c.branch} className="st"><i className="spin" /> Stop checks running on {c.branch} at {c.sha.slice(0, 8)}, since {new Date(c.at).toLocaleTimeString()}</div> : <div key={c.branch} className={`st ${c.ok ? "dim" : ""}`} title={c.commands.map((x) => `${x.command}: exit ${x.exit}`).join("\n")}>Stop checks {c.ok ? "passed" : "failed"} on {c.branch} at {c.sha.slice(0, 8)}: {c.commands.filter((x) => c.ok || x.exit !== 0).map((x) => `${x.command} (exit ${x.exit})`).join(", ")}</div>)}
           {it.loop && <LoopLines it={it} />}
           {it.guide && <GuideLines it={it} />}
@@ -784,6 +793,61 @@ function Detail({ flow, it, wide, onWide, onPrimary, onStart, onSheet, onUnpark,
       ) : (
         <div className="panes"><div className="stack">{prs}{feedback}</div>{agent}</div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Known-broken CI: note it once for the repo, so its failures ask nothing and agents leave them alone;
+ * when the fix lands, one key updates every PR it held up.
+ */
+function BrokenLines({ it }: { it: WorkItem }) {
+  const [note, setNote] = useState("");
+  const [open, setOpen] = useState(false);
+  const toast = (m: string) => window.dispatchEvent(new CustomEvent("cr-toast", { detail: m }));
+  const failingRepo = it.prs.find((p) => p.role === "mine" && (p.checks === "failure" || p.checks === "error"))?.repo.split("/").pop();
+  const mark = async () => {
+    const r = await post("/api/broken", { repo: failingRepo, note });
+    toast(r.error ? `Couldn't: ${r.error}` : r.result);
+    if (!r.error) { setNote(""); setOpen(false); }
+  };
+  const fixed = async (repo: string) => { const r = await post("/api/broken", { repo, clear: true }); toast(r.error ? `Couldn't: ${r.error}` : r.result); };
+  return (
+    <div className="notes">
+      {it.broken?.map((b) => (
+        <div key={b.repo} className="note-line"><span className="st pen">CI BROKEN</span><span>{b.repo}: {b.note}</span>
+          <button className="btn sm on-strip" title="Updates every PR of yours in this repo from its base" onClick={() => void fixed(b.repo)}>Fix landed: update PRs</button></div>
+      ))}
+      {failingRepo && !it.broken?.length && (open ? (
+        <input className="field" autoFocus placeholder={`What's broken across ${failingRepo}? Agents will leave it alone.`} value={note} onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") void mark(); if (e.key === "Escape") setOpen(false); }} onBlur={() => !note && setOpen(false)} />
+      ) : <button className="btn sm on-strip" onClick={() => setOpen(true)}>CI broken repo-wide?</button>)}
+    </div>
+  );
+}
+
+/** Decisions on the work item: every session started on it is told them, and agents add to them. */
+function Notes({ it }: { it: WorkItem }) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const add = async () => {
+    if (!text.trim()) return;
+    const r = await post("/api/notes", { item: it.id, text });
+    if (r.error) return window.dispatchEvent(new CustomEvent("cr-toast", { detail: `Couldn't: ${r.error}` }));
+    if (r.told?.length) window.dispatchEvent(new CustomEvent("cr-toast", { detail: `Told ${r.told.join(", ")}` }));
+    setText("");
+    setOpen(false);
+  };
+  return (
+    <div className="notes">
+      {it.notes?.map((n) => (
+        <div key={n.id} className="note-line"><span className="st">DECIDED</span><span>{n.text}</span><span className="st dim">{n.by === "user" ? "" : n.by}</span>
+          <button className="x" title="Remove" onClick={() => void post("/api/notes", { remove: n.id })}>×</button></div>
+      ))}
+      {open ? (
+        <input className="field" autoFocus placeholder="A decision every session on this item should know…" value={text} onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") void add(); if (e.key === "Escape") setOpen(false); }} onBlur={() => !text && setOpen(false)} />
+      ) : <button className="btn sm on-strip" onClick={() => setOpen(true)}>+ Decision</button>}
     </div>
   );
 }
@@ -883,7 +947,7 @@ function AgentPane({ agents, item, expand }: { agents: Agent[]; item: WorkItem; 
             </button>
           ))}</div>
         )}
-        <div className="meta">{a.workspaceLabel} · {a.label}{a.branch ? ` · ${a.branch}` : ""}{a.task && <> · <span title={TASK_FROM[a.taskFrom ?? "label"]}>{TASK_TEXT[a.task]}</span></>}</div>
+        <div className="meta">{a.machine && <span className="mach" title={`Runs on ${a.machine}`}>{a.machine}</span>}{a.workspaceLabel} · {a.label}{a.branch ? ` · ${a.branch}` : ""}{a.task && <> · <span title={TASK_FROM[a.taskFrom ?? "label"]}>{TASK_TEXT[a.task]}</span></>}</div>
         {a.spent && (
           <div className="spent">
             <b>Spent:</b> {a.spent.reason}{a.spent.output ? <> · <span className="mono">{a.spent.output}</span></> : null}

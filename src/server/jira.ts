@@ -1,8 +1,9 @@
-import { SETTINGS } from "./settings";
+import { SETTINGS, tuning } from "./settings";
 // The Jira feed: The user's In Progress issues and the status of every Jira key on the board, through
-// jira.py (ADR 0001), every JIRA_EVERY_MS. Transitions go through jira.py too.
+// jira.py (ADR 0001), on the Settings page's Jira interval. Transitions go through jira.py too.
 import type { Issue } from "../shared/types";
-import { JIRA, JIRA_EVERY_MS, POLL } from "./config";
+import { JIRA, POLL } from "./config";
+import { every } from "./every";
 import { load, save } from "./db";
 import { read, write, type Ctx } from "./runner";
 
@@ -37,10 +38,11 @@ export function syncJira(keys: string[], changed: () => void): Promise<void> {
 }
 
 export function startJira(keys: () => string[], changed: () => void) {
+  if (!POLL) return;
   // The Jira login is global: a project with no Jira projects in its settings never calls it.
-  if (!POLL || !SETTINGS.jiraProjects?.length) return;
-  void syncJira(keys(), changed);
-  setInterval(() => void syncJira(keys(), changed), JIRA_EVERY_MS);
+  const sync = () => { if (SETTINGS.jiraProjects?.length) void syncJira(keys(), changed); };
+  sync();
+  every(tuning.jiraMs, sync);
 }
 
 /** Moves an issue to a status, then refreshes it. Dev records it without moving anything. */

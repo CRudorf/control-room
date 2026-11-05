@@ -4,11 +4,12 @@ import type { ItemBranch, Issue, AcceptanceFacts, Lane, PrimaryAction } from "..
 import { branchLine, inLastStage } from "../shared/branches";
 import { SETTINGS } from "./settings";
 
-const FLOW = SETTINGS.flow ?? {};
-const WHO = FLOW.who ?? "The reviewer";
+// Read on each call: the Settings page can change the flow while the server runs.
+const flow = () => SETTINGS.flow ?? {};
+const who = () => flow().who ?? "The reviewer";
 const same = (a: string, b?: string) => !!b && a.toLowerCase() === b.toLowerCase();
-const FIRST = FLOW.stages?.[0] ?? "the first stage";
-const LAST = FLOW.stages?.[FLOW.stages.length - 1] ?? "the last stage";
+const first = () => flow().stages?.[0] ?? "the first stage";
+const last = () => flow().stages?.at(-1) ?? "the last stage";
 
 export type Outcome = "testing" | "question" | "failed" | "approved";
 const at = (s: string | null | undefined) => (s ? Date.parse(s) || 0 : 0);
@@ -29,9 +30,9 @@ export function failOpen(t: AcceptanceFacts | undefined): boolean {
 /** Where product has the issue, or null when it is not in product testing. */
 export function outcomeOf(issue: Issue): Outcome | null {
   if (!issue.mine) return null;
-  if (same(issue.status, FLOW.approvedStatus)) return "approved";
+  if (same(issue.status, flow().approvedStatus)) return "approved";
   if (failOpen(issue.testing)) return "failed";
-  if (same(issue.status, FLOW.testingStatus)) return issue.testing && questionOpen(issue.testing) ? "question" : "testing";
+  if (same(issue.status, flow().testingStatus)) return issue.testing && questionOpen(issue.testing) ? "question" : "testing";
   return null;
 }
 
@@ -45,13 +46,13 @@ const quote = (s: string | undefined | null) => (s ? ` · “${s.length > 140 ? 
 /** The prompt context for an agent that fixes a failed issue. */
 export function failContext(issue: Issue): string {
   const f = issue.testing!.failed!;
-  return `${WHO} failed this in testing on ${FIRST}: ${f.by ?? "someone"} moved it from ${f.from} to ${f.to} at ${f.at}.${f.comment ? ` Their latest comment: "${f.comment.firstLine}"` : ""} Read the issue's comments first, fix what they found, and say on the issue what changed.`;
+  return `${who()} failed this in testing on ${first()}: ${f.by ?? "someone"} moved it from ${f.from} to ${f.to} at ${f.at}.${f.comment ? ` Their latest comment: "${f.comment.firstLine}"` : ""} Read the issue's comments first, fix what they found, and say on the issue what changed.`;
 }
 
 /** The prompt context for an agent that opens the last stage's PR of an approved issue. */
 export function releaseContext(issue: Issue, branches: ItemBranch[]): string {
   const names = [...new Set(branches.filter((b) => !inLastStage(b)).map((b) => b.name))].join(", ");
-  return `${WHO} approved this on ${FIRST} and moved it to ${issue.status}. Do not change code. Open a PR from the feature branch (${names}) against ${LAST}, not ${FIRST}. The base is ${LAST} because the approval is done. Reuse the body of the branch's staging PR. Show me the PR link.`;
+  return `${who()} approved this on ${first()} and moved it to ${issue.status}. Do not change code. Open a PR from the feature branch (${names}) against ${last()}, not ${first()}. The base is ${last()} because the approval is done. Reuse the body of the branch's staging PR. Show me the PR link.`;
 }
 
 /** The lane, why and primary action for an issue in product testing, or null when it isn't. */
@@ -66,15 +67,15 @@ export function acceptanceLane(issue: Issue, branches: ItemBranch[], mergedPrs: 
       primary: { label: `Fix ${issue.key} with an agent`, start: issue.key, startContext: failContext(issue) } };
   }
   if (o === "question")
-    return { outcome: o, lane: "mine", urgency: 2, why: `${WHO} asked a question${quote(t?.lastComment?.firstLine)}`, primary: { label: `Answer ${WHO.toLowerCase()} on ${issue.key}`, url: issue.url } };
+    return { outcome: o, lane: "mine", urgency: 2, why: `${who()} asked a question${quote(t?.lastComment?.firstLine)}`, primary: { label: `Answer ${who().toLowerCase()} on ${issue.key}`, url: issue.url } };
   if (o === "testing") {
     const prs = mergedPrs.length ? ` · merged ${mergedPrs.join(", ")}` : "";
-    return { outcome: o, lane: "waiting", urgency: 0, why: `${WHO} testing on ${FIRST}${prs}`, primary: open };
+    return { outcome: o, lane: "waiting", urgency: 0, why: `${who()} testing on ${first()}${prs}`, primary: open };
   }
-  if (reachedLast(branches)) return { outcome: o, lane: "parked", urgency: 0, why: `Approved, on ${LAST}`, primary: open, finished: true };
+  if (reachedLast(branches)) return { outcome: o, lane: "parked", urgency: 0, why: `Approved, on ${last()}`, primary: open, finished: true };
   // Approved: the feature branch now goes to the last stage, and that PR is ours to open.
-  if (branches.length) return { outcome: o, lane: "mine", urgency: 2, why: `Approved by ${WHO.toLowerCase()}: PR it to ${LAST} · ${branchLine(branches)}`,
-    primary: { label: `PR ${issue.key} to ${LAST}`, start: issue.key, startContext: releaseContext(issue, branches) } };
-  const note = `Approved, waiting for ${LAST} · no ${issue.key} branch found`;
+  if (branches.length) return { outcome: o, lane: "mine", urgency: 2, why: `Approved by ${who().toLowerCase()}: PR it to ${last()} · ${branchLine(branches)}`,
+    primary: { label: `PR ${issue.key} to ${last()}`, start: issue.key, startContext: releaseContext(issue, branches) } };
+  const note = `Approved, waiting for ${last()} · no ${issue.key} branch found`;
   return { outcome: o, lane: "parked", urgency: 0, why: `“${note}”`, primary: open, note };
 }

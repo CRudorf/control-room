@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Agent, PrRow } from "../shared/types";
 import { groupWorkItems } from "./workitems";
-import { MAX_GUIDES, toGuide } from "./guides";
+import { toGuide } from "./guides";
+import { tuning } from "./settings";
 
 const pr = (n: number, over: Partial<PrRow> = {}): PrRow => ({
   repo: "acme/widgets", number: n, title: `a change ${n}`, url: `https://github.com/acme/widgets/pull/${n}`, author: "sam", draft: false,
@@ -37,7 +38,7 @@ describe("toGuide", () => {
 
   test("waits for room: running review agents count, and low memory stops it", () => {
     const items = groupWorkItems([pr(1), pr(2), pr(3), pr(4)], [agent(4, "working")]);
-    expect(toGuide(items, {}, false)).toHaveLength(MAX_GUIDES - 1);
+    expect(toGuide(items, {}, false)).toHaveLength(tuning.guides() - 1);
     expect(toGuide(groupWorkItems([pr(1)]), {}, true)).toEqual([]);
   });
 

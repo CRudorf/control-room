@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { ReviewDrafts, WorkItem } from "../shared/types";
 import { Confirm, post, toast } from "./actions";
 
-type Loaded = { drafts: ReviewDrafts | null; head?: string; pushedSince?: boolean; outside?: number[] };
+type Proposal = { event: Event; picked: number[]; summary: string; why: string };
+type Loaded = { drafts: ReviewDrafts | null; head?: string; pushedSince?: boolean; outside?: number[]; proposal?: Proposal };
 type Event = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 const EVENTS: [Event, string][] = [["COMMENT", "Comment"], ["APPROVE", "Approve"], ["REQUEST_CHANGES", "Request changes"]];
 
@@ -15,6 +16,7 @@ export function Curate({ it }: { it: WorkItem }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [event, setEvent] = useState<Event>("COMMENT");
   const [sheet, setSheet] = useState(false);
+  const [summary, setSummary] = useState("");
 
   const load = async (fresh: boolean) => {
     const r = (await fetch(`/api/review?item=${encodeURIComponent(it.id)}`).then((x) => x.json()).catch(() => null)) as Loaded | null;
@@ -22,8 +24,10 @@ export function Curate({ it }: { it: WorkItem }) {
     setData((old) => {
       // New drafts (a new commit or a rewrite) reset the picks; otherwise keep the user's edits.
       if (fresh || JSON.stringify(old?.drafts?.findings) !== JSON.stringify(r.drafts?.findings)) {
-        setPicked(new Set((r.drafts?.findings ?? []).filter((f) => !r.outside?.includes(f.id)).map((f) => f.id)));
+        // Start from the verdict the drafts call for; the user confirms or flips it.
+        setPicked(new Set(r.proposal ? r.proposal.picked : (r.drafts?.findings ?? []).filter((f) => !r.outside?.includes(f.id)).map((f) => f.id)));
         setBodies(Object.fromEntries((r.drafts?.findings ?? []).map((f) => [f.id, f.body])));
+        if (r.proposal) { setEvent(r.proposal.event); setSummary(r.proposal.summary); }
       }
       return r;
     });
@@ -42,7 +46,7 @@ export function Curate({ it }: { it: WorkItem }) {
   const toggle = (id: number) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const recheck = async () => { const r = await post("/api/review/recheck", { item: it.id }); toast(r.error ? `Couldn't: ${r.error}` : r.result); };
   const send = async () => {
-    const r = await post("/api/review/post", { item: it.id, event, picked: chosen.map((f) => ({ id: f.id, path: f.path, line: f.line, start_line: f.start_line, body: bodies[f.id] ?? f.body })) });
+    const r = await post("/api/review/post", { item: it.id, event, summary, picked: chosen.map((f) => ({ id: f.id, path: f.path, line: f.line, start_line: f.start_line, body: bodies[f.id] ?? f.body })) });
     toast(r.error ? `Couldn't post: ${r.error}` : `Posted ${chosen.length} comment${chosen.length === 1 ? "" : "s"}`);
     if (!r.error) void load(true);
   };
@@ -58,8 +62,10 @@ export function Curate({ it }: { it: WorkItem }) {
       <div className="curate-head">
         <b>{d.findings.length} drafted · {chosen.length} picked</b>
         <div className="seg">{EVENTS.map(([k, l]) => <button key={k} className={event === k ? "on" : ""} onClick={() => setEvent(k)}>{l}</button>)}</div>
-        <button className="btn sm primary" disabled={!chosen.length && event === "COMMENT"} onClick={() => setSheet(true)}>Post <span className="pings">PINGS</span></button>
+        <button className="btn sm primary" disabled={!chosen.length && event === "COMMENT" && !summary.trim()} onClick={() => setSheet(true)}>Post <span className="pings">PINGS</span></button>
       </div>
+      {data.proposal && <p className="st dim">Proposed: {EVENTS.find(([k]) => k === data.proposal!.event)![1].toLowerCase()} ({data.proposal.why}), {data.proposal.picked.length} inline. Ranks never reach the PR.</p>}
+      <textarea className="summary" rows={summary ? Math.min(8, summary.split("\n").length + 1) : 2} placeholder="Summary comment (optional; empty posts none)" value={summary} onChange={(e) => setSummary(e.target.value)} />
       {d.findings.map((f) => {
         const off = data.outside?.includes(f.id);
         return (
@@ -78,7 +84,8 @@ export function Curate({ it }: { it: WorkItem }) {
       })}
       {sheet && (
         <Confirm title={`Post a review on #${p.number}`} label="Post review" onClose={() => setSheet(false)} go={send}
-          who={`Notifies ${p.author}. ${EVENTS.find(([k]) => k === event)![1]} with ${chosen.length} inline comment${chosen.length === 1 ? "" : "s"}, no summary.`}>
+          who={`Notifies ${p.author}. ${EVENTS.find(([k]) => k === event)![1]} with ${chosen.length} inline comment${chosen.length === 1 ? "" : "s"}, ${summary.trim() ? "and the summary below" : "no summary"}.`}>
+          {summary.trim() && <pre className="summary-pre">{summary}</pre>}
           <ul className="sheet-list replies">
             {chosen.map((f) => <li key={f.id}><b>{f.path}:{f.line}</b> · {f.rank}<pre>{bodies[f.id] ?? f.body}</pre></li>)}
           </ul>

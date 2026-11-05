@@ -7,6 +7,7 @@
     "dev": "CR_DEV=1 bun --hot src/server/main.ts",
     "test": "bun test",
     "deploy": "bash bin/deploy.sh",
+    "ship": "bun scripts/ship.ts",
     "open": "bun src/server/open.ts",
     "item": "bun src/server/item.ts",
     "prototype": "bun prototype/layout/strips.html"

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Agent, Feedback, PrRow } from "../shared/types";
 import { groupWorkItems } from "./workitems";
-import { applyLoop, decide, feedbackKey, MAX_ROUNDS, views, type Ctx, type Loops } from "./cycle";
+import { applyLoop, decide, feedbackKey, views, type Ctx, type Loops } from "./cycle";
+import { tuning } from "./settings";
 import { classify, describe as describeFlags, type Flag } from "./risk";
 
 const fb = (over: Partial<Feedback> = {}): Feedback => ({ kind: "thread", who: "pat", bot: false, url: "https://github.com/acme/widgets/pull/7#r1", at: "2030-01-02T00:00:00Z", body: "rename this", where: "src/a.ts:3", thread_id: "T1", reply_to: 11, ...over });
@@ -88,9 +89,9 @@ describe("decide", () => {
 
   test("stops after the round cap", () => {
     const loops = run(pr()).loops;
-    loops[REF].rounds = MAX_ROUNDS;
+    loops[REF].rounds = tuning.reviewRounds();
     const r = run(pr({ state: "address", feedback: [fb()] }), loops);
-    expect(r.loops[REF].stop?.why).toContain(`${MAX_ROUNDS} rounds`);
+    expect(r.loops[REF].stop?.why).toContain(`${tuning.reviewRounds()} rounds`);
   });
 
   test("a second changes request from the same person stops it", () => {

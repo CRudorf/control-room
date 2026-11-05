@@ -1,7 +1,9 @@
-import { note as recordNote } from "./runner";
+import { isDev, note as recordNote } from "./runner";
+import { DEFAULT_BOT_PATTERN, EDITABLE, KNOBS, knob, SETTINGS, SETTINGS_PATH, saveSettings, tuning } from "./settings";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { DEV, PORT, ROOT } from "./config";
-import { finishedSince, adopt, copyAsk, moveJira, nudge, publish, refetch, refresh, remove, removed, restore, setDependency, setHold, setAgentMove, setCommentWait, setMove, setPark, snapshot, start, subscribe } from "./feed";
+import { adopted, finishedSince, adopt, copyAsk, moveJira, nudge, publish, refetch, refresh, remove, removed, restore, setDependency, setHold, setAgentMove, setCommentWait, setMove, setPark, snapshot, start, subscribe } from "./feed";
 import { startFeedbackTask } from "./feedbacktask";
 import type { Move } from "../shared/types";
 import { markAddressed, postReplies, rerequest, rerunCi, resolveThreads, updateBranch, type Reply } from "./actions";
@@ -12,27 +14,33 @@ import { sessions } from "./sessions";
 import { qualityRecords, setVerdict, shipped, startShipped, verifyPrompt } from "./shipped";
 import { bounces } from "./product";
 import { allLessons, lessonsFor, markStick, removeLesson, stickPrompt } from "./lessons";
-import { findItem, formatItem } from "./itemview";
+import { findItem, formatItem, sessionContext } from "./itemview";
 import { replays, runReplays, waitingReplays, gradeReplay } from "./replay";
 import { recordEvent } from "./events";
 import { historySyncedAt, METRICS_FROM, prFacts, startHistory, syncHistory } from "./history";
 import { features, friction, quality, stageTimes, weekly, type Event } from "./metrics";
 import { loopState, runLoop, startLoop, setPulse } from "./loop";
 import { latestReport } from "./friction";
-import { deleteRoutine, idleSeconds, routineRuns, routines, runRoutine, saveRoutine, startRoutines, START_HOUR } from "./routines";
+import { deleteRoutine, idleSeconds, routineRuns, routines, runRoutine, saveRoutine, startRoutines } from "./routines";
 import { localRepos, repoInProject } from "./repos";
 import { closedTabs, closeTabs, history, listTabs } from "./tidy";
 import { startAgent, tasksFor, type StartRequest } from "./handoff";
+import { addNote, decisionTells, removeNote } from "./notes";
+import { markSeen } from "./since";
+import { clearBroken, setBroken } from "./broken";
+import { saveRecipe } from "./recipe";
+import { deployStatus, startDeploy } from "./deploy";
 import { startFromSignal, startTriage, suggest } from "./start";
 import { dismissRun, postComment, runFiles, runs } from "./runs";
 import { setCoeffs, usage } from "./usage";
 import { machine } from "./health";
+import { machines as machineList, machineStatus, startMachines } from "./machines";
 import { awsSession, refreshMfa } from "./aws";
 import { guardrails } from "./guardrails";
 import { setupTracker, trackerState } from "./tracker";
 import { checkHookPrompt, checkLine, checksFor, reposWithoutChecks } from "./checks";
 import { openArtifact } from "./artifacts";
-import { diffLines, dismissFinding, postReview, readDrafts, type Picked } from "./review";
+import { deltaPrompt, diffLines, dismissFinding, postReview, proposeVerdict, readDrafts, type Picked } from "./review";
 import { deleteRun, listWorktrees, removeWorktrees, startCleanup } from "./cleanup";
 import { confirmPassing, getRun, listRuns, runFile, setConfirm, startRun, stopRun, tail, trackedLogEmails, filesSince, verifyPrompt as verifyRunPrompt } from "./verify";
 import { bootstrap, guard, HOSTNAME, token } from "./security";
@@ -47,6 +55,26 @@ import { agentChat, agentTurn, withTitles } from "./turns";
 import { dialogOf } from "./transcript";
 import type { Dialog, Routine } from "../shared/types";
 import { addFlowChange, chartChange, chartRun, flowChangePreview, getVisual, listVisuals, videoChange, visualFile } from "./visuals";
+
+// Settings that don't change which PRs and issues belong on the board, so a save of them needs no GitHub check.
+const TUNING = ["polling", "agents", "schedule", "prs", "machines"];
+
+async function settingsView() {
+  const s = SETTINGS as Record<string, unknown>;
+  return {
+    path: SETTINGS_PATH.replace(homedir(), "~"),
+    dev: isDev(),
+    project: Object.fromEntries(EDITABLE.filter((k) => !TUNING.includes(k)).map((k) => [k, s[k] ?? null])),
+    tracker: SETTINGS.tracker ?? null,
+    machines: SETTINGS.machines ?? [],
+    machineStatus: await machineStatus(),
+    botPattern: SETTINGS.prs?.botPattern ?? DEFAULT_BOT_PATTERN,
+    defaultBotPattern: DEFAULT_BOT_PATTERN,
+    knobs: KNOBS.map((k) => ({ ...k, value: knob(k.section, k.key) })),
+    adopted: await adopted().catch(() => null),
+    excluded: await removed().then((r) => r.length).catch(() => null),
+  };
+}
 
 const archStart = (repo: string, prompt: string) => startAgent({ item: `arch-${repo}`, repo, pr: null, kind: "custom", prompt, edited: false, bare: true });
 
@@ -87,6 +115,10 @@ const server = Bun.serve({
     "/manifest.webmanifest": pub("manifest.webmanifest", "application/manifest+json"),
     "/icon.svg": pub("icon.svg", "image/svg+xml"),
     "/sw.js": pub("sw.js", "text/javascript"),
+    // The World's character models (src/ui/public/models): public, like the page.
+    "/models/:name": (req) => /^[\w-]+\.glb$/.test(req.params.name)
+      ? new Response(Bun.file(join(ROOT, "src/ui/public/models", req.params.name)), { headers: { "content-type": "model/gltf-binary", "cache-control": "max-age=86400" } })
+      : new Response("not found", { status: 404 }),
     "/bootstrap": (req) => guard(req, { needCookie: false }) ?? bootstrap(req),
     "/api/snapshot": api(() => Response.json(snapshot())),
     "/api/events": api(events),
@@ -97,6 +129,69 @@ const server = Bun.serve({
       return new Response(formatItem(it, it.repos.flatMap((r) => lessonsFor(r)), checksFor(it.prs).map(checkLine)));
     }),
     "/api/refresh": { POST: api(async () => { await refresh(); return Response.json({ ok: true }); }) },
+    // Decisions on a work item: the board's notes sheet, and `bun run item <key> --note` from an agent.
+    "/api/notes": {
+      POST: api(async (req) => {
+        const b = (await req.json()) as { item?: string; q?: string; text?: string; by?: string; remove?: number; cwd?: string };
+        if (b.remove) { removeNote(b.remove); publish(); return Response.json({ ok: true }); }
+        const it = b.item ? snapshot().items.find((i) => i.id === b.item) : findItem(snapshot().items, b.q ?? "");
+        const key = it?.key ?? b.q ?? "";
+        try {
+          const n = addNote(key, b.text ?? "", b.by ?? "user");
+          // Sessions already running on the item started without it: tell them now.
+          const told: string[] = [];
+          if (it && n.fresh) for (const t of decisionTells(it, n, b.cwd ?? null)) {
+            try { await sendToAgent(t.pane, t.text, it.id, "decision"); told.push(it.agents.find((a) => a.pane === t.pane)?.name ?? t.pane); }
+            catch {}
+          }
+          publish();
+          if (b.q !== undefined) return new Response(`noted on ${key}: ${n.text}${told.length ? ` (told ${told.join(", ")})` : ""}`);
+          return Response.json({ note: n, told });
+        } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }),
+    },
+    // Known-broken CI in a repo: noted once, or cleared when the fix lands, which updates the PRs it held up.
+    "/api/broken": { POST: api(async (req) => {
+      const { repo, note, clear } = (await req.json()) as { repo: string; note?: string; clear?: boolean };
+      try {
+        if (clear) { const r = await clearBroken(repo, snapshot().items); publish(); return Response.json({ result: r.length ? `updated ${r.length}: ${r.join("; ")}` : "cleared; nothing to update" }); }
+        setBroken(repo, note ?? ""); publish();
+        return Response.json({ result: `noted: CI in ${repo} is known broken` });
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }) },
+    // The SessionStart hook (sessionhook.ts): what a session on this branch should know, and who else is on it.
+    "/api/session-context": api((req) => {
+      const u = new URL(req.url).searchParams;
+      const branch = u.get("branch") ?? "", session = u.get("session") ?? "";
+      if (!branch || /^(main|master|develop|plan)$/.test(branch) || branch.startsWith("worktree-")) return new Response("");
+      const it = findItem(snapshot().items, branch);
+      if (!it) return new Response("");
+      return new Response(sessionContext(it, branch, session, formatItem(it, it.repos.flatMap((r) => lessonsFor(r)), checksFor(it.prs).map(checkLine))));
+    }),
+    // Deploying GitHub's main from inside the control room (deploy.ts): `bun run ship` from any agent.
+    "/api/deploy": {
+      GET: api(async () => Response.json(await deployStatus())),
+      POST: api(async () => {
+        try { return Response.json(await startDeploy("ship")); }
+        catch (e) { return Response.json({ error: (e as Error).message }, { status: 409 }); }
+      }),
+    },
+    // How to run a repo locally, as an agent worked it out (`bun run item <key> --recipe`).
+    "/api/recipe": { POST: api(async (req) => {
+      const { q, text, repo } = (await req.json()) as { q?: string; text: string; repo?: string };
+      const it = q ? findItem(snapshot().items, q) : null;
+      const r = repo ?? it?.repos[0] ?? it?.agents.find((a) => a.repo)?.repo;
+      if (!r) return new Response(`no repo for ${q}`, { status: 404 });
+      try { return new Response(`saved how to run ${r} to ${saveRecipe(r, text)}`); }
+      catch (e) { return new Response((e as Error).message, { status: 400 }); }
+    }) },
+    // The user opened a work item: what it is now is the baseline its "since you looked" line compares with.
+    "/api/seen": { POST: api(async (req) => {
+      const { item } = await req.json();
+      const it = snapshot().items.find((i) => i.id === item);
+      if (it) { markSeen(it); publish(); }
+      return Response.json({ ok: true });
+    }) },
     // What an agent last said: its recap and its last turn, from its transcript.
     "/api/agent/turn": api((req) => {
       const pane = new URL(req.url).searchParams.get("pane") ?? "";
@@ -273,7 +368,10 @@ const server = Bun.serve({
       try { return Response.json(await refreshMfa(String(code ?? ""))); }
       catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
     }) },
-    "/api/history": api(() => Response.json({ entries: history() })),
+    "/api/history": api((req) => {
+      const u = new URL(req.url).searchParams;
+      return Response.json(history({ before: Number(u.get("before")) || null, action: u.get("action") || null }));
+    }),
     "/api/park": { POST: api(async (req) => {
       const { item, note, until } = (await req.json()) as { item: string; note: string | null; until: string | null };
       setPark(item, note, until ?? null);
@@ -427,10 +525,26 @@ const server = Bun.serve({
       setPulse(score);
       return Response.json({ ok: true });
     }) },
+    // The Settings page: this project's settings file, and the tuning with each knob's default and bounds.
+    "/api/settings": {
+      GET: api(async () => Response.json(await settingsView())),
+      POST: api(async (req) => {
+        const { patch } = (await req.json()) as { patch: Record<string, unknown> };
+        try {
+          saveSettings(patch ?? {}, { dryRun: isDev() });
+          const keys = Object.keys(patch ?? {});
+          recordNote({ item: null, trigger: "settings page" }, "settings", keys.join(", "), isDev() ? "dry run: applied until restart, file unchanged" : "saved");
+          publish();
+          // A changed project (org, Jira projects, flow) can change which PRs and issues belong on the board.
+          if (keys.some((k) => !TUNING.includes(k))) void refresh();
+          return Response.json(await settingsView());
+        } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }),
+    },
     "/api/routines": {
-      GET: api(() => Response.json({ routines: routines(), runs: routineRuns(), repos: localRepos().filter((n) => repoInProject(n)), idle: idleSeconds(), startHour: START_HOUR, loop: loopState().last, friction: latestReport(),
+      GET: api(() => Response.json({ routines: routines(), runs: routineRuns(), repos: localRepos().filter((n) => repoInProject(n)), idle: idleSeconds(), startHour: tuning.workFrom(), machines: machineList().map((m) => m.name), loop: loopState().last, friction: latestReport(),
         // Where each agent a run started is now, by name: its pane, status and workspace, while herdr has it.
-        live: Object.fromEntries(herdrState().agents.filter((a) => a.name).map((a) => [a.name!, { pane: a.pane, status: a.status, workspace: a.workspaceLabel }])) })),
+        live: Object.fromEntries(herdrState().agents.filter((a) => a.name).map((a) => [a.name!, { pane: a.pane, status: a.status, workspace: a.workspaceLabel, machine: a.machine ?? null }])) })),
       POST: api(async (req) => {
         const b = (await req.json()) as { op: "save" | "delete" | "run"; routine?: Routine; id?: string };
         try {
@@ -521,7 +635,8 @@ const server = Bun.serve({
           const lines = await diffLines(p, drafts.sha || p.head);
           outside = drafts.findings.filter((f) => !lines.get(f.path)?.has(f.line)).map((f) => f.id);
         } catch {}
-        return Response.json({ drafts, head: p.head, pushedSince: !!drafts.sha && drafts.sha !== p.head, outside });
+        const pushedSince = !!drafts.sha && drafts.sha !== p.head;
+        return Response.json({ drafts, head: p.head, pushedSince, outside, proposal: proposeVerdict(drafts, pushedSince, outside) });
       }),
     },
     "/api/selfreview": {
@@ -543,13 +658,13 @@ const server = Bun.serve({
       return Response.json({ ok: true });
     }) },
     "/api/review/post": { POST: api(async (req) => {
-      const { item, picked, event } = (await req.json()) as { item: string; picked: Picked[]; event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES" };
+      const { item, picked, event, summary } = (await req.json()) as { item: string; picked: Picked[]; event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES"; summary?: string };
       const it = snapshot().items.find((i) => i.id === item);
       const p = it?.prs.find((x) => x.role === "requested");
       const drafts = p && readDrafts(`${p.repo}#${p.number}`);
       if (!p || !drafts) return Response.json({ error: "no drafts for this review request" }, { status: 404 });
       try {
-        const url = await postReview(item, p, drafts, picked, event);
+        const url = await postReview(item, p, drafts, picked, event, summary ?? "");
         void refetch(`${p.repo}#${p.number}`);
         return Response.json({ result: url });
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
@@ -559,9 +674,15 @@ const server = Bun.serve({
       const it = snapshot().items.find((i) => i.id === item);
       const p = it?.prs.find((x) => x.role === "requested");
       const a = it?.agents.find((x) => x.status !== "working") ?? it?.agents[0];
-      if (!p || !a) return Response.json({ error: "no review agent on this item" }, { status: 404 });
+      const drafts = p && readDrafts(`${p.repo}#${p.number}`);
+      if (!p || !drafts?.sha) return Response.json({ error: "no review to re-check on this item" }, { status: 404 });
       try {
-        await sendToAgent(a.pane, `The author pushed since your review; the PR head is now ${p.head}. Pull it, re-check each finding against the new code, drop the ones that are fixed, and rewrite the drafts file pinned to the new commit.`, item, "review");
+        // With its review tab gone, a helper session picks the review up from its drafts file.
+        if (!a) {
+          const r = await startAgent({ item, repo: p.repo, pr: `${p.repo}#${p.number}`, kind: "review", prompt: deltaPrompt(p, drafts), edited: false });
+          return Response.json({ result: `started ${r.name} to re-check since ${drafts.sha.slice(0, 7)}` });
+        }
+        await sendToAgent(a.pane, deltaPrompt(p, drafts), item, "review");
         return Response.json({ result: `asked ${a.name ?? a.label} to re-check` });
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
     }) },
@@ -600,7 +721,12 @@ const server = Bun.serve({
         return Response.json({ tasks: tasksFor(it), repos });
       }),
       POST: api(async (req) => {
-        try { return Response.json(await startAgent((await req.json()) as StartRequest)); }
+        try {
+          const r = (await req.json()) as StartRequest;
+          // The PR's branch, so a session already on it (whatever its tab says) is the one that gets the work.
+          const p = r.pr ? snapshot().items.flatMap((i) => i.prs).find((x) => `${x.repo}#${x.number}` === r.pr) : undefined;
+          return Response.json(await startAgent({ ...r, branch: r.branch ?? p?.branch ?? null }));
+        }
         catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
       }),
     },
@@ -644,6 +770,7 @@ start();
 startHistory();
 startShipped();
 startLoop();
+startMachines();
 startRoutines();
 startSuggestions(() => snapshot().items, publish, archStart);
 if (!DEV) startCleanup();

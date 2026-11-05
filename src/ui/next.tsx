@@ -7,6 +7,7 @@ export const STEP: Record<NextStep, { t: string; why: string }> = {
   answer: { t: "Answer", why: "an agent is stuck until you reply" },
   start: { t: "Start", why: "agents work while you do the rest" },
   quick: { t: "Quick", why: "takes seconds" },
+  post: { t: "Post", why: "drafts are waiting to go out" },
   check: { t: "Check", why: "an agent finished" },
   look: { t: "Look", why: "nothing faster is waiting" },
   pickup: { t: "Pick up", why: "the board is clear; this is free to start" },
@@ -39,7 +40,7 @@ export function NextQueue({ cur, nudge, queue, nudges, waiting, batch, onPrimary
           <motion.div key={cur.id} className="nextcard" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -24 }}
             transition={{ type: "spring", stiffness: 420, damping: 34 }}>
             {cur.next ? (
-              <div className="step"><b>{STEP[cur.next.step].t}</b> · {STEP[cur.next.step].why}<span className="pos">{queue.indexOf(cur) + 1} of {total}</span></div>
+              <div className="step"><b>{STEP[cur.next.step].t}</b> · {cur.next.why ?? STEP[cur.next.step].why}<span className="pos">{queue.indexOf(cur) + 1} of {total}</span></div>
             ) : (
               <div className="step off"><b>Off your plate</b> · it moved on since you started</div>
             )}

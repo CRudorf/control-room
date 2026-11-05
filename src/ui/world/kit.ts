@@ -40,6 +40,12 @@ export type WorldKit = {
   fight: { hit: (scene: THREE.Scene, bits: Bit[], x: number, y: number, z: number) => void; attack: string; defend: string; holding: string; fighting: string; defeat: (winner: string, loser: string) => string };
   /** The side panel's words: its three tabs, the list of what needs you, the stats, the experience counter. */
   panel: { quests: string; stats: string; options: string; list: string; statsTitle: string | null; total: string; xp: string; how: string };
+  /** How the view is drawn. Left out, it's the client's: rendered small and scaled up in chunky pixels. `sharp` draws
+   *  at the screen's full resolution, smoothed; `shadows` lets the kit's lights cast them; `exposure` turns on filmic
+   *  tone mapping at that brightness; `environment` lights everything from a studio's surroundings too, so metal and
+   *  glass reflect, at that strength; `ao` darkens creases and contact with ambient occlusion; `bloom` lets bright
+   *  lights glow, at that strength. */
+  render?: { sharp?: boolean; shadows?: boolean; exposure?: number; environment?: number; ao?: boolean; bloom?: number };
 };
 
 export const TOWN: WorldKit = {

@@ -2,20 +2,22 @@ import { trackerIssues } from "./tracker";
 import { checksFor, startChecks } from "./checks";
 import { startFeedbackTasks, withTasks } from "./feedbacktask";
 import { lastAction, myLastActions } from "./lastaction";
-import { SETTINGS } from "./settings";
+import { SETTINGS, tuning } from "./settings";
 import { PROJECT } from "./repos";
 // Keeps the board's PR rows fresh and tells subscribers when the board changes.
 import type { Dependency, Move, PrRow, Snapshot } from "../shared/types";
 import { prRef } from "../shared/types";
 import { complexityOf, effortOf } from "../shared/effort";
 import { lessonsFor } from "./lessons";
-import { DETECT_EVERY_MS, DEV, POLL, PRS, RECONCILE_EVERY_MS } from "./config";
+import { DEV, POLL, PRS } from "./config";
+import { every } from "./every";
 import { db, load, save } from "./db";
 import { note as record, read, write } from "./runner";
 import { behindBy, detect, diff, fetchOne, prState, reconcile, type Fingerprints } from "./github";
 import { herdrState, sendToAgent, startHerdr } from "./herdr";
 import { reranHeads } from "./actions";
-import { pendingDrafts, readDrafts } from "./review";
+import { draftsFile, pendingDrafts, readDrafts } from "./review";
+import { statSync } from "node:fs";
 import { announce } from "./notifier";
 import { dismissRun, runs } from "./runs";
 import { pickedNow } from "./suggestions";
@@ -37,6 +39,11 @@ const withSpent = (it: WorkItem): WorkItem => ({
 import { cycle, loopsNow } from "./reviewloop";
 import { applyLoop, owned, running, views } from "./cycle";
 import { applyGuides, startGuides } from "./guides";
+import { withNotes } from "./notes";
+import { brokenAll, startConflicts, withBroken } from "./broken";
+import { defaultReviewers, withReviewers } from "./reviewers";
+import { startAgent, tasksFor } from "./handoff";
+import { withSince } from "./since";
 import { findStacks, withStack } from "./stacks";
 import { branchesFor, startBranches } from "./branches";
 import { prFacts } from "./history";
@@ -85,20 +92,20 @@ const parks = () => new Map(db.query<ParkRow, []>("SELECT * FROM parked").all()
 const detail = (item: string | null) => ({ item, trigger: "detail" });
 
 // Park rules: which issues a rule parked, and which the user took off Parked by hand.
-const PARK_RULES = SETTINGS.flow?.parkRules ?? [];
+const parkRules = () => SETTINGS.flow?.parkRules ?? [];
 let ruleParks = load<Record<string, RulePark>>("rule_parks") ?? {};
 let released = new Set(load<string[]>("rule_released") ?? []);
-const parkOf = (j: Issue, bs: ItemBranch[]) => parkState(j, bs, PARK_RULES, ruleParks[j.key], released.has(slug(j.key)));
+const parkOf = (j: Issue, bs: ItemBranch[]) => parkState(j, bs, parkRules(), ruleParks[j.key], released.has(slug(j.key)));
 
 /** Remembers what the rules parked, and records each issue a rule finished, once. */
 function settleRuleParks(issues: Map<string, Issue>, onBoard: Set<string>) {
-  if (!PARK_RULES.length) return;
+  if (!parkRules().length) return;
   const next: Record<string, RulePark> = {};
   const stillReleased = new Set<string>();
   for (const j of issues.values()) {
     if (!j.mine) continue;
     const bs = branchesFor(j.key), s = parkOf(j, bs);
-    if (PARK_RULES.some((r) => r.status.toLowerCase() === j.status.toLowerCase()) && released.has(slug(j.key))) stillReleased.add(slug(j.key));
+    if (parkRules().some((r) => r.status.toLowerCase() === j.status.toLowerCase()) && released.has(slug(j.key))) stillReleased.add(slug(j.key));
     if (s.state === "parked" || s.state === "woke") next[j.key] = { status: s.rule.status, at: s.since };
     else if (s.state === "finished" && onBoard.has(j.key)) { if (ruleParks[j.key]) next[j.key] = ruleParks[j.key]; }
     else if (s.state === "finished")
@@ -247,6 +254,9 @@ export async function adopt(ref: string, note: string | null, item: string | nul
 
 export const removed = async () => JSON.parse(await prsCmd("excluded", "--json")) as { key: string; why: string }[];
 
+/** The PRs taken over from someone else, from prs.py's list. */
+export const adopted = async () => JSON.parse(await prsCmd("adopted", "--json")) as { key: string; note: string }[];
+
 /** Takes a key off the exclude list; the next reconcile brings its PRs back. */
 export async function restore(key: string) {
   await write(detail(null), "restore", key, () => prsCmd("include", key).then(() => "restored"));
@@ -320,6 +330,15 @@ function approvedFinished(issues: ReturnType<typeof jiraIssues>, since: string):
   return out;
 }
 
+/** How long a review's drafts have waited to be posted, once it's over an hour. */
+function draftAge(it: WorkItem): string | null {
+  if (it.primary.act !== "curate" || !it.primary.pr) return null;
+  try {
+    const h = (Date.now() - statSync(draftsFile(it.primary.pr)).mtimeMs) / 3_600_000;
+    return h < 1 ? null : h < 48 ? `${Math.floor(h)}h` : `${Math.floor(h / 24)}d`;
+  } catch { return null; }
+}
+
 export function snapshot(): Snapshot {
   const h = herdrState();
   const [gs, done] = [dependencies(), merged()];
@@ -331,7 +350,8 @@ export function snapshot(): Snapshot {
     const ref = `${p.repo}#${p.number}`, d = p.role === "mine" && drafts.has(ref) ? readDrafts(ref) : null;
     if (d && !(p.head.startsWith(d.sha) || d.sha.startsWith(p.head))) drafts.delete(ref);
   }
-  const grouped = groupWorkItems(all.map(withBehind).map(withStack(all)), h.agents, holds(), reranHeads(), drafts, moves(), new Set([...shutGates(gs, done), ...running(loopsNow())]), { keyOfRef, agentMoves: agentMoves() });
+  const broken = brokenAll();
+  const grouped = groupWorkItems(all.map(withBehind).map(withStack(all)).map(withBroken(broken)).map((p) => withReviewers(p, defaultReviewers(p.repo))), h.agents, holds(), reranHeads(), drafts, moves(), new Set([...shutGates(gs, done), ...running(loopsNow())]), { keyOfRef, agentMoves: agentMoves() });
   const issues = new Map([...jiraIssues(), ...trackerIssues()]);
   const quiet = quietAgentsByKey(h.agents, { keyOfRef, agentMoves: agentMoves() });
   const movedOn = (run: Run, it: WorkItem) => runMovedOn(run, it, issues.get(it.key), prFacts().filter((f) => f.feature === it.key && f.merged).map((f) => f.merged!));
@@ -346,7 +366,9 @@ export function snapshot(): Snapshot {
   const items = sortItems(rankNext(applyGuides(applyParks(waited, parks()))))
     .map((it) => {
       const u = usageFor(it), a = artifactsFor(it), c = checksFor(it.prs);
-      return { ...withEffort(withTasks(withSpent(it))), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}) };
+      const waited = draftAge(it);
+      const br = it.repos.flatMap((r) => (broken.has(r.toLowerCase()) ? [broken.get(r.toLowerCase())!] : []));
+      return { ...withSince(withNotes(withEffort(withTasks(withSpent(it))))), ...(waited ? { why: `${it.why} · drafts waiting ${waited}` } : {}), ...(br.length ? { broken: br } : {}), last: lastAction(it, mine.get(it.id) ?? null), ...(c.length ? { stopChecks: c } : {}), ...(u ? { usage: u } : {}), ...(a.length ? { artifacts: a } : {}) };
     });
   settleRuleParks(issues, new Set(items.map((it) => it.key)));
   const today = db.query<FinishedRow, [string]>("SELECT * FROM finished WHERE at >= ? ORDER BY at").all(midnight());
@@ -402,6 +424,11 @@ export function publish() {
     recordBounces(jiraIssues().values(), branchesFor, mergedPrs);
     void cycle(s.items, !!s.machine?.low, publish);
     void startGuides(s.items, !!s.machine?.low, publish);
+    // A PR that starts conflicting gets an agent on the merge; it commits locally and asks before pushing.
+    void startConflicts(s.items, !!s.machine?.low, async (it, p) => {
+      const t = tasksFor(it).find((x) => x.kind === "conflicts" && x.pr === prRef(p));
+      if (t) await startAgent({ item: it.id, repo: p.repo, pr: t.pr, kind: "conflicts", prompt: t.prompt, edited: false });
+    });
     // A wake has been announced: the park is over.
     for (const it of s.items) if (it.park?.woke) db.query("DELETE FROM parked WHERE item = ?").run(it.id);
     // So has a lifted dependency.
@@ -526,8 +553,8 @@ export function start() {
     log("polling off (dev); serving the saved snapshot. Pass --poll to poll.");
     return;
   }
-  const stale = !reconciledAt || Date.now() - Date.parse(reconciledAt) > RECONCILE_EVERY_MS;
+  const stale = !reconciledAt || Date.now() - Date.parse(reconciledAt) > tuning.reconcileMs();
   void step(stale ? "full" : "tick");
-  setInterval(() => void step("tick"), DETECT_EVERY_MS);
-  setInterval(() => void step("full"), RECONCILE_EVERY_MS);
+  every(tuning.detectMs, () => void step("tick"));
+  every(tuning.reconcileMs, () => void step("full"));
 }

@@ -13,6 +13,12 @@ cd "$root" || exit 0
 base=$(git rev-parse --verify -q origin/HEAD || true)
 if [ -z "$(git status --porcelain)" ] && { [ -z "$base" ] || [ "$(git rev-parse HEAD)" = "$base" ]; }; then exit 0; fi
 
+# Nothing changed since the last check (a turn that only talked, or read): don't run it again.
+fp_file="$(git rev-parse --git-dir)/cr-stop-check"
+fp=$( { git rev-parse HEAD; git status --porcelain; git diff; } 2>/dev/null | shasum | cut -c1-40)
+if [ -f "$fp_file" ] && [ "$(cat "$fp_file")" = "$fp" ]; then exit 0; fi
+printf '%s' "$fp" > "$fp_file" 2>/dev/null || true
+
 json() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r\t'; }
 
 dir="${CR_CHECKS_DIR:-$HOME/.config/control-room/checks}"

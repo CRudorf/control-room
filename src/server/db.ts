@@ -10,8 +10,20 @@ if (DEV && !existsSync(DB_PATH) && existsSync(join(INSTALLED_STATE_DIR, "state.d
 
 export const db = new Database(DB_PATH, { create: true });
 db.exec("PRAGMA journal_mode = WAL");
-// The table had an older name.
-if (db.query("SELECT 1 FROM sqlite_master WHERE name = 'gates'").get()) db.exec("ALTER TABLE gates RENAME TO dependencies");
+// The table had an older name. An older build run against a newer database makes the old one again
+// beside the new: its rows join the new table, then it goes.
+migrateRenamed("gates", "dependencies", "ref, set_at, on_ref, step");
+
+/** Moves a table to its new name, or folds the old one into the new when both exist. */
+export function migrateRenamed(from: string, to: string, cols: string) {
+  const has = (t: string) => !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
+  if (!has(from)) return;
+  if (!has(to)) { db.exec(`ALTER TABLE ${from} RENAME TO ${to}`); return; }
+  db.transaction(() => {
+    db.exec(`INSERT OR IGNORE INTO ${to} (${cols}) SELECT ${cols} FROM ${from}`);
+    db.exec(`DROP TABLE ${from}`);
+  })();
+}
 db.exec(`
   CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS parked (

@@ -1,20 +1,21 @@
 // Routines: prompts the control room starts on its own, daily or weekly, in each of their repos. One runs
 // at a set local time, or when the user starts work: the first time that day they're at the machine
-// (keyboard or mouse in the last two minutes, after 5am). A routine with no prompt runs /signal-to-pr bare,
+// (keyboard or mouse in the last two minutes, after the hour on the Settings page, 5am by default). A routine with no prompt runs /signal-to-pr bare,
 // which triages the repo's live errors into a menu. Each run is once per day or week; a failed start
 // tries again half an hour later. Every control room starts with the weekly friction review (friction.ts).
+// A run starts on the first machine from Settings that's ready (machines.ts), else on this Mac.
 import { execFileSync } from "node:child_process";
 import { DEV } from "./config";
 import { load, save } from "./db";
 import { DEFAULT_ROUTINES, writeBrief } from "./friction";
 import { startAgent } from "./handoff";
-import { note } from "./runner";
+import { isDev, note } from "./runner";
+import { machines, syncTo, unready } from "./machines";
+import { tuning } from "./settings";
 import { weekOf } from "../shared/week";
 import type { Routine, RoutineRun } from "../shared/types";
 
 const CHECK_MS = 60_000;
-/** Before this hour, being at the machine isn't starting work. */
-export const START_HOUR = 5;
 /** Seconds since the last keyboard or mouse input that still count as at the machine. */
 const ACTIVE_S = 120;
 const RETRY_MS = 30 * 60_000;
@@ -32,7 +33,7 @@ export function isDue(r: Routine, now: Date, last: RoutineRun | undefined, activ
   if ((r.weekdaysOnly || r.cadence === "weekly") && day % 6 === 0) return false;
   // Weekly: on its weekday, or the first weekday after it if the control room was off.
   if (r.cadence === "weekly" && day < r.weekday) return false;
-  if (r.when === "start") { if (!active || now.getHours() < START_HOUR) return false; }
+  if (r.when === "start") { if (!active || now.getHours() < tuning.workFrom()) return false; }
   else if (`${pad(now.getHours())}:${pad(now.getMinutes())}` < r.when) return false;
   if (last?.period !== periodOf(r, now)) return true;
   return !!last.error && now.getTime() - Date.parse(last.at) >= RETRY_MS;
@@ -68,7 +69,7 @@ export function saveRoutine(r: Routine): Routine {
   if (r.when !== "start" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(r.when)) throw new Error("the time is HH:MM");
   if (r.cadence === "weekly" && !(r.weekday >= 1 && r.weekday <= 5)) throw new Error("the weekday is Monday to Friday");
   const clean: Routine = { id: r.id, name: r.name.trim(), prompt: r.prompt.trim(), repos: [...new Set(r.repos)], cadence: r.cadence, weekday: r.weekday,
-    weekdaysOnly: !!r.weekdaysOnly, when: r.when, enabled: !!r.enabled, ...(r.brief === "sessions" ? { brief: r.brief } : {}) };
+    weekdaysOnly: !!r.weekdaysOnly, when: r.when, enabled: !!r.enabled, ...(r.brief === "sessions" ? { brief: r.brief } : {}), ...(r.runOn === "local" ? { runOn: r.runOn } : {}) };
   save("routines", [...routines().filter((x) => x.id !== r.id), clean]);
   return clean;
 }
@@ -81,6 +82,9 @@ export function deleteRoutine(id: string) {
 }
 
 const running = new Set<string>();
+
+/** A routine that runs only on this Mac: set so, or one whose brief is this Mac's own sessions. */
+export const onlyHere = (r: Pick<Routine, "runOn" | "brief">) => r.runOn === "local" || r.brief === "sessions";
 
 /** Starts a routine's agent in each of its repos and records the run. */
 export async function runRoutine(id: string, trigger: "schedule" | "routines page") {
@@ -98,14 +102,28 @@ async function startRun(r: Routine, trigger: string) {
   try { if (r.brief === "sessions") prompt += writeBrief(); }
   catch (e) { errors.push(`the session index: ${(e as Error).message}`); }
   for (const repo of errors.length ? [] : r.repos) {
+    const start = (machine: string | null) => startAgent({ item: `routine-${r.id}-${repo}`, repo, pr: null, kind: "custom", prompt, edited: false, machine });
+    // The first machine from Settings that's ready takes it; any failure there falls back to this Mac, and the run says why.
+    const why: string[] = [];
+    if (!onlyHere(r)) for (const m of machines()) {
+      const no = await unready(m, repo);
+      if (no) { why.push(no); continue; }
+      try {
+        if (!isDev()) await syncTo(m);
+        const a = await start(m.name);
+        agents.push({ repo, name: a.name, dryRun: "dryRun" in a, machine: m.name });
+        break;
+      } catch (e) { why.push(`${m.name}: ${(e as Error).message}`); }
+    }
+    if (agents.some((a) => a.repo === repo)) continue;
     try {
-      const a = await startAgent({ item: `routine-${r.id}-${repo}`, repo, pr: null, kind: "custom", prompt, edited: false });
-      agents.push({ repo, name: a.name, dryRun: "dryRun" in a });
+      const a = await start(null);
+      agents.push({ repo, name: a.name, dryRun: "dryRun" in a, machine: null, ...(why.length ? { fellBack: why.join("; ") } : {}) });
     } catch (e) { errors.push(`${repo}: ${(e as Error).message}`); }
   }
   const run: RoutineRun = { period, at, trigger, agents, error: errors.length ? errors.join("; ") : null };
   save("routine_runs", { ...routineRuns(), [r.id]: run });
-  note({ item: null, trigger: "routine" }, "routine", r.name, run.error ? `failed: ${run.error}` : `started ${agents.map((a) => a.name).join(", ")}`, { at, detail: run });
+  note({ item: null, trigger: "routine" }, "routine", r.name, run.error ? `failed: ${run.error}` : `started ${agents.map((a) => `${a.name}${a.machine ? ` on ${a.machine}` : ""}`).join(", ")}`, { at, detail: run });
   return run;
 }
 

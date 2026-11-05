@@ -1,6 +1,6 @@
 import { post } from "./actions";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { TidyTab } from "../shared/types";
 
 type Closed = { at: string; label: string; result: string; resume: string[] };
@@ -165,37 +165,58 @@ export function Tidy({ onClose }: { onClose: () => void }) {
   );
 }
 
-type Entry = { at: string; item: string | null; action: string; trigger: string | null; label: string | null; result: string | null; dryRun: boolean; resume: string[] };
+type Entry = { id: number; at: string; item: string | null; action: string; trigger: string | null; label: string | null; result: string | null; dryRun: boolean; resume: string[] };
 
 const ACTION: Record<string, string> = { "start-agent": "Started agent", notify: "Notified", "close-tab": "Closed tab", "close-pane": "Closed session", "mark-seen": "Marked seen", "verify-start": "Verify started", "verify-up": "Verify app up", "verify-failed": "Verify failed", "verify-stop": "Verify stopped", "verify-confirm": "Verify verdict", "verify-delete": "Verify deleted", "cleanup-worktrees": "Removed worktrees", "cleanup-reap": "Auto cleanup" };
 
-/** What the control room has done, newest first (the action record). */
+const day = (at: string) => new Date(at).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+
+/** What the control room has done, newest first (the action record), a page at a time, under a heading per day. */
 export function History({ onClose }: { onClose: () => void }) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
+  const [kinds, setKinds] = useState<{ action: string; n: number }[]>([]);
+  const [total, setTotal] = useState(0);
   const [kind, setKind] = useState<string>("all");
-  useEffect(() => { void fetch("/api/history").then((x) => x.json()).then((r) => setEntries(r.entries ?? [])); }, []);
+  const [more, setMore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // A filter asks the server, so it reaches back through the whole record rather than the page in hand.
+  const page = async (before: number | null) => {
+    setBusy(true);
+    const q = new URLSearchParams({ ...(before ? { before: String(before) } : {}), ...(kind !== "all" ? { action: kind } : {}) });
+    const r = await fetch(`/api/history?${q}`).then((x) => x.json()).catch(() => null);
+    setBusy(false);
+    if (!r) return;
+    setEntries((xs) => (before ? [...(xs ?? []), ...r.entries] : r.entries));
+    setKinds(r.kinds ?? []);
+    setTotal(r.total ?? 0);
+    setMore((r.entries ?? []).length === 200);
+  };
+  useEffect(() => { setEntries(null); void page(null); }, [kind]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
   }, [onClose]);
-  const kinds = [...new Set((entries ?? []).map((e) => e.action))];
-  const shown = (entries ?? []).filter((e) => kind === "all" || e.action === kind);
+  const shown = entries ?? [];
+  const of = kind === "all" ? total : kinds.find((k) => k.action === kind)?.n ?? 0;
   return (
     <div className="tidy">
       <div className="tidy-head">
-        <div><h2>History</h2><span className="st dim">{entries ? `${entries.length} recorded` : "Loading…"} · every write and notification the control room makes</span></div>
+        <div><h2>History</h2><span className="st dim">{entries ? `${shown.length} of ${of} shown${shown.length ? `, back to ${day(shown[shown.length - 1].at)}` : ""}` : "Loading…"} · every write and notification the control room makes</span></div>
         <div className="row-acts">
-          <div className="seg">
-            {["all", ...kinds].map((k) => <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k === "all" ? "All" : ACTION[k] ?? k}</button>)}
-          </div>
+          <select className="field inline" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Show">
+            <option value="all">All ({total})</option>
+            {kinds.map((k) => <option key={k.action} value={k.action}>{ACTION[k.action] ?? k.action} ({k.n})</option>)}
+          </select>
           <button className="btn" onClick={onClose}>Done <kbd>esc</kbd></button>
         </div>
       </div>
       <div className="tidy-list">
         {shown.map((e, i) => (
-          <div key={i} className="hist-row">
-            <span className="ta">{new Date(e.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+          <Fragment key={e.id}>
+          {(i === 0 || day(shown[i - 1].at) !== day(e.at)) && <div className="hist-day st dim">{day(e.at)}</div>}
+          <div className="hist-row">
+            <span className="ta" title={new Date(e.at).toLocaleString()}>{new Date(e.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}</span>
             <span className="st">{ACTION[e.action] ?? e.action}{e.dryRun ? " (dry run)" : ""}</span>
             <div className="hl">
               <b>{e.label}</b> <span className="st dim">{e.result}</span>
@@ -204,8 +225,10 @@ export function History({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           </div>
+          </Fragment>
         ))}
         {entries && !shown.length && <div className="empty">Nothing recorded yet.</div>}
+        {more && <div className="hist-more"><button className="btn" disabled={busy} onClick={() => void page(shown[shown.length - 1].id)}>{busy ? "Loading…" : "Load older"}</button></div>}
       </div>
     </div>
   );

@@ -7,13 +7,14 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { Usage, UsageCoeffs, UsageTotals, WorkItem } from "../shared/types";
 import { POLL } from "./config";
+import { every } from "./every";
+import { tuning } from "./settings";
 import { db, load, save } from "./db";
 import { METRICS_FROM, prFacts } from "./history";
 import { featureOf } from "./metrics";
 import { DEFAULT_COEFFS, PRICES_AS_OF, sum, tally, turnOf, WEIGHTS, type Turn } from "./tokens";
 
 const ROOT = join(CLAUDE_DIR, "projects");
-const EVERY_MS = 10 * 60_000;
 const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 
 db.exec(`
@@ -24,6 +25,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS usage_files (path TEXT PRIMARY KEY, offset INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS usage_sessions (session TEXT PRIMARY KEY, item_key TEXT NOT NULL, repo TEXT);
 `);
+// The agent's name, so the friction review can say which board action started a session.
+try { db.exec("ALTER TABLE usage_sessions ADD COLUMN agent TEXT"); } catch {}
 
 const insert = db.query(`INSERT OR IGNORE INTO usage_turns (id, at, session, model, dir, branch, input, output, read, write5m, write1h)
   VALUES ($id, $at, $session, $model, $dir, $branch, $input, $output, $read, $write5m, $write1h)`);
@@ -83,7 +86,16 @@ const TRUNKS = new Set(["main", "master", "plan", "develop", "HEAD", ""]);
 const placeholder = (b: string) => TRUNKS.has(b) || b.startsWith("worktree-");
 
 const sessionItems = () => new Map(db.query<{ session: string; item_key: string }, []>("SELECT session, item_key FROM usage_sessions").all().map((r) => [r.session, r.item_key]));
-const putSession = db.query("INSERT INTO usage_sessions (session, item_key, repo) VALUES (?, ?, ?) ON CONFLICT(session) DO UPDATE SET item_key = excluded.item_key, repo = excluded.repo");
+const putSession = db.query("INSERT INTO usage_sessions (session, item_key, repo, agent) VALUES (?, ?, ?, ?) ON CONFLICT(session) DO UPDATE SET item_key = excluded.item_key, repo = excluded.repo, agent = excluded.agent");
+
+/** Each session's agent name, as the board last saw it. */
+export const sessionAgents = () => new Map(db.query<{ session: string; agent: string | null }, []>("SELECT session, agent FROM usage_sessions").all().filter((r) => r.agent).map((r) => [r.session, r.agent!]));
+
+/**
+ * Whether an agent the board shows on a work item is really working on it: its repo has to be one of the
+ * item's. An agent in one repo whose tab names another repo's item (control-room work in an rca tab) isn't. Pure.
+ */
+export const tiesTo = (it: Pick<WorkItem, "repos">, repo: string | null) => !repo || it.repos.some((r) => r.toLowerCase() === repo.toLowerCase());
 
 /**
  * Remembers which work item each herdr agent's Claude session works on, as the board joins them.
@@ -93,8 +105,8 @@ export function noteSessions(items: WorkItem[]) {
   const known = sessionItems();
   let fresh = false;
   for (const it of items) for (const a of it.agents) {
-    if (!a.session || !it.prs.length || known.get(a.session) === it.key) continue;
-    putSession.run(a.session, it.key, a.repo);
+    if (!a.session || !it.prs.length || known.get(a.session) === it.key || !tiesTo(it, a.repo)) continue;
+    putSession.run(a.session, it.key, a.repo, a.name);
     fresh = true;
   }
   if (fresh) rebuild();
@@ -203,5 +215,5 @@ export function startUsage(changed: () => void) {
   rebuild();
   if (!POLL && !existsSync(ROOT)) return;
   void syncUsage(changed);
-  setInterval(() => void syncUsage(changed), EVERY_MS);
+  every(tuning.usageMs, () => void syncUsage(changed));
 }
