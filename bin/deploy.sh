@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install or update the copy launchd runs, pinned to main (ADR 0005), then restart it.
 set -euo pipefail
-repo="$(cd "$(dirname "$0")/.." && pwd)"
+# The server runs a copy of this script from its state folder and names the clone in CR_DEPLOY_REPO.
+repo="${CR_DEPLOY_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 app="$HOME/Library/Application Support/control-room/app"
 logs="$HOME/Library/Logs/control-room"
 label=com.control-room.app
@@ -13,8 +14,11 @@ if [[ "${SKIP_LAYOUT:-}" != 1 ]]; then
 fi
 
 if [[ -d "$app/.git" ]]; then
-  git -C "$app" fetch -q origin main
-  git -C "$app" reset -q --hard origin/main
+  # From the server, ship the GitHub main it just fetched into the clone, not the clone's local main.
+  src=main
+  [[ -n "${CR_DEPLOY_REPO:-}" ]] && src=refs/remotes/origin/main
+  git -C "$app" fetch -q origin "$src"
+  git -C "$app" reset -q --hard FETCH_HEAD
 else
   git clone -q --branch main "$repo" "$app"
 fi
