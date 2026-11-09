@@ -92,7 +92,9 @@ export function transcriptPath(a: Pick<Agent, "session" | "cwd">): string | null
   if (!a.session) return null;
   const here = join(CLAUDE_DIR, "projects", a.cwd.replace(/[/.]/g, "-"), `${a.session}.jsonl`);
   if (existsSync(here)) return here;
-  if (!found.has(a.session)) found.set(a.session, [...new Bun.Glob(`*/${a.session}.jsonl`).scanSync({ cwd: join(CLAUDE_DIR, "projects"), absolute: true })][0] ?? null);
+  // With no projects folder yet (a fresh Claude install), there is nothing to search.
+  const projects = join(CLAUDE_DIR, "projects");
+  if (!found.has(a.session) && existsSync(projects)) found.set(a.session, [...new Bun.Glob(`*/${a.session}.jsonl`).scanSync({ cwd: projects, absolute: true })][0] ?? null);
   return found.get(a.session) ?? here;
 }
 

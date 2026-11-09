@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 process.env.CR_STATE_DIR = mkdtempSync(join(tmpdir(), "cr-test-"));
+// Tests never read the session's own Claude folder, which a project can move with CLAUDE_CONFIG_DIR.
+process.env.CLAUDE_CONFIG_DIR = join(process.env.CR_STATE_DIR, ".claude");
 // Tests never read the private project map. Everything under acme and the example owners is this test project.
 process.env.CR_PROJECT = "test";
 process.env.CR_PROJECTS_PATH = join(process.env.CR_STATE_DIR ?? tmpdir(), "projects-test.json");
