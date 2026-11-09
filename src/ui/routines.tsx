@@ -111,7 +111,7 @@ export function Routines({ onClose }: { onClose: () => void }) {
     setBusy("loop");
     const r = await post("/api/loop", {});
     setBusy(null);
-    toast(r.error ? `Couldn't start the loop: ${r.error}` : `Started ${r.agent}`);
+    toast(r.error ? `Couldn't start the loop: ${r.error}` : r.agent ? `Started ${r.agent}` : "Wrote this project's brief");
     load();
   };
   return (

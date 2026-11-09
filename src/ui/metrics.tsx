@@ -232,7 +232,7 @@ export function Metrics({ onClose }: { onClose: () => void }) {
             <div className="loopbox">
               <div className="loophead">
                 <span className="st dim">{loop?.last
-                  ? loop.last.error ? `Last run failed ${ago(loop.last.at)} ago: ${loop.last.error}` : `Last run ${ago(loop.last.at)} ago as ${loop.last.agent}; it reports, files loop issues and opens a draft PR`
+                  ? loop.last.error ? `Last run failed ${ago(loop.last.at)} ago: ${loop.last.error}` : loop.last.agent ? `Last run ${ago(loop.last.at)} ago as ${loop.last.agent}; it reports, files loop issues and opens a draft PR` : `Wrote this project's brief ${ago(loop.last.at)} ago; the loop agent runs in the project that holds control-room`
                   : "Runs once a week, the first weekday morning between 9 and noon: reports, files up to 3 loop issues, opens a draft PR for the top one."}</span>
                 <button className="btn" disabled={looping} onClick={runLoop}>{looping ? "Starting…" : "Run it now"}</button>
               </div>

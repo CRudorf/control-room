@@ -2,9 +2,10 @@ import { PROJECTS_PATH, repoInProject, repoPath } from "./repos";
 // The weekly self-improvement loop: once a week, write a brief of the metrics and what happened in
 // the control room, then start an agent that reports on it, files up to three proposals as `loop`
 // issues on this repo, and opens a draft PR for the top one. It never merges or deploys.
+// Every project writes a brief. Only the project that holds this repo starts the agent, which reads them all.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { DEV, STATE_DIR } from "./config";
+import { dirname, join } from "node:path";
+import { DEV, INSTALLED_STATE_DIR, STATE_DIR } from "./config";
 import { db, load, save } from "./db";
 import { note } from "./runner";
 import { snapshot } from "./feed";
@@ -71,11 +72,32 @@ const ISSUES = (() => {
   try { return JSON.parse(readFileSync(PROJECTS_PATH, "utf8")).public?.repo ?? "this repo"; } catch { return "this repo"; }
 })();
 
-function prompt(week: string, briefPath: string, reportPath: string) {
+/** The loop folder of every other project in the private map. Each project keeps its own state, so its PRs and events are only in its own brief. Pure. */
+export function otherLoopDirs(projects: Record<string, { stateDir?: string }>, ownStateDir: string): string[] {
+  const support = dirname(ownStateDir);
+  const dirs = Object.values(projects).map((p) => join(support, p.stateDir ?? "control-room"));
+  return [...new Set(dirs)].filter((d) => d !== ownStateDir).map((d) => join(d, "loop"));
+}
+
+/** Whether the loop agent waits for another project's brief: only until the last hour of the window, so a project that is off can't stop the loop. Pure. */
+export const waitsForBriefs = (missing: number, hour: number, until: number) => missing > 0 && hour < until - 1;
+
+const briefFile = (week: string) => `${week}-brief.json`;
+
+function otherBriefs(week: string) {
+  let projects: Record<string, { stateDir?: string }> = {};
+  try { projects = JSON.parse(readFileSync(PROJECTS_PATH, "utf8")).projects ?? {}; } catch { /* no map: this project is the only one */ }
+  const paths = otherLoopDirs(projects, INSTALLED_STATE_DIR).map((d) => join(d, briefFile(week)));
+  return { found: paths.filter((p) => existsSync(p)), missing: paths.filter((p) => !existsSync(p)) };
+}
+
+export function prompt(week: string, briefPath: string, reportPath: string, others: { found: string[]; missing: string[] } = { found: [], missing: [] }) {
+  const moreBriefs = others.found.length ? `\n- The briefs of the user's other projects, in the same form: ${others.found.map((p) => `"${p}"`).join(", ")}. Most of his PRs can be in one of these. Read them as well, and keep each project's numbers apart.` : "";
+  const noBriefs = others.missing.length ? `\n- This week has no brief from: ${others.missing.map((p) => `"${p}"`).join(", ")}. Say so in the report: its numbers are missing, not zero.` : "";
   return `This is the control room's weekly self-improvement loop, for the week of ${week}. The goal is to make the user's work as smooth, fast and low-effort as possible, and what he ships hold up after it merges, measured by the control room's own metrics.
 
 Read first:
-- The brief at "${briefPath}": output metrics by week, friction from the control room's event log, quality by week (CI failures, how often he had to step in on agents, how often the review loop finished alone, merged PRs that broke something or got reworked), where PR time goes, what the user did through the control room, and the board right now.
+- The brief at "${briefPath}": output metrics by week, friction from the control room's event log, quality by week (CI failures, how often he had to step in on agents, how often the review loop finished alone, merged PRs that broke something or got reworked), where PR time goes, what the user did through the control room, and the board right now.${moreBriefs}${noBriefs}
 - The user's Claude Code transcripts from the last 7 days (\`find ~/.claude/projects -name '*.jsonl' -mtime -7\`). Look at his own messages for friction: asking agents for status ("any other feedback?", "is X mergeable?"), repeating the same instructions, correcting agents, doing by hand something the control room could do. Count occurrences; don't quote at length.
 - Earlier reports in "${LOOP_DIR}" and every issue labelled \`loop\` on ${ISSUES} (\`gh issue list -R ${ISSUES} --label loop --state all\`), so you don't re-propose something already proposed or rejected, and can check whether the last change that shipped moved the number it targeted.
 - PRODUCT.md, GLOSSARY.md and docs/adr, for what the control room is and the decisions already made.
@@ -118,18 +140,23 @@ async function tendLessons() {
 export async function runLoop(trigger: "schedule" | "metrics view") {
   const week = weekOf(new Date().toISOString());
   mkdirSync(LOOP_DIR, { recursive: true });
-  const briefPath = join(LOOP_DIR, `${week}-brief.json`);
+  const briefPath = join(LOOP_DIR, briefFile(week));
   const reportPath = join(LOOP_DIR, `${week}-report.md`);
   const at = new Date().toISOString();
   try {
-    // The loop works on control-room's own repo, which only its own project can start agents in.
-    if (!repoInProject("control-room")) return null;
     // Without the PR history the brief has no output metrics; failing here retries on the next check.
     await syncHistory();
     const notReady = historyNotReady(historySyncedAt());
     if (notReady) throw new Error(notReady);
     writeFileSync(briefPath, JSON.stringify(brief(week), null, 2));
-    const r = await startAgent({ item: `loop-${week}`, repo: "control-room", pr: null, kind: "custom", prompt: prompt(week, briefPath, reportPath), edited: false, bare: true });
+    // The loop works on control-room's own repo, which only its own project can start agents in.
+    // Every other project stops here, and that project's loop agent reads the brief.
+    if (!repoInProject("control-room")) {
+      save("loop_last", { week, at, agent: null, error: null } satisfies LastRun);
+      note({ item: null, trigger }, "loop", "", "brief written", { at });
+      return { week, agent: null };
+    }
+    const r = await startAgent({ item: `loop-${week}`, repo: "control-room", pr: null, kind: "custom", prompt: prompt(week, briefPath, reportPath, otherBriefs(week)), edited: false, bare: true });
     save("loop_last", { week, at, agent: r.name, error: null } satisfies LastRun);
     note({ item: null, trigger }, "loop", r.name, "dryRun" in r ? "dry run" : "started", { at });
     await tendLessons().catch((e) => console.error(new Date().toISOString(), "lesson upkeep failed:", (e as Error).message));
@@ -158,7 +185,9 @@ export function startLoop() {
     if (now.getDay() % 6 === 0 || now.getHours() < tuning.loopFrom() || now.getHours() >= tuning.loopUntil()) return;
     // A failed start retries on the next check; a started one waits for next week.
     const last = load<LastRun>("loop_last");
-    if (last?.week === weekOf(now.toISOString()) && !last.error) return;
+    const week = weekOf(now.toISOString());
+    if (last?.week === week && !last.error) return;
+    if (repoInProject("control-room") && waitsForBriefs(otherBriefs(week).missing.length, now.getHours(), tuning.loopUntil())) return;
     void runLoop("schedule").catch((e) => console.error(new Date().toISOString(), "loop failed:", (e as Error).message));
   };
   check();
