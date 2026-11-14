@@ -60,6 +60,14 @@ describe("issue-guard.py", () => {
     expect(run('gh issue edit 1 -R me/x --title "in work-repo"').code).toBe(2);
     expect(run("gh api repos/secretco/x/issues -f title=a").code).toBe(2);
   });
+  test("issue writes to a private project's repo pass: its issues aren't public", () => {
+    expect(run('gh issue create -R WorkOrg/x --title "for SecretCo" --body "b"').code).toBe(0);
+    expect(run('gh issue comment 1 --repo https://github.com/workorg/x --body "workorg"').code).toBe(0);
+    expect(run("gh api repos/WorkOrg/x/issues -f title=secretco").code).toBe(0);
+    expect(run('gh issue create -R Mine/work-repo --title "secretco"').code).toBe(0);
+    expect(run('gh issue create -R Mine/x --title "secretco"').code).toBe(2);
+    expect(run('gh issue create -R stranger/x --title "secretco"').code).toBe(2);
+  });
   test("a body file is read, and an unreadable one blocks", () => {
     const d = mkdtempSync(join(tmpdir(), "body-"));
     writeFileSync(join(d, "b.md"), "about SECRETCO"); writeFileSync(join(d, "ok.md"), "fine");
@@ -67,12 +75,20 @@ describe("issue-guard.py", () => {
     expect(run("gh issue create -R me/x -t a --body-file ok.md", config(), d).code).toBe(0);
     expect(run("gh issue create -R me/x -t a --body-file nope.md", config(), d).code).toBe(2);
   });
-  test("with no -R the clone's origin counts", () => {
+  const clone = (owner: string) => {
     const d = mkdtempSync(join(tmpdir(), "clone-"));
     Bun.spawnSync(["git", "init", "-q"], { cwd: d });
-    Bun.spawnSync(["git", "remote", "add", "origin", "https://github.com/WorkOrg/x.git"], { cwd: d });
+    Bun.spawnSync(["git", "remote", "add", "origin", `https://github.com/${owner}/x.git`], { cwd: d });
+    return d;
+  };
+  test("with no -R the clone's origin counts", () => {
+    const d = clone("secretco");
     expect(run('gh issue create --title a --body b', config(), d).code).toBe(2);
     expect(run('gh issue create -R me/x --title a --body b', config(), d).code).toBe(0);
+  });
+  test("in a private project's clone its issues pass; from the public project they don't", () => {
+    expect(run('gh issue create --title "secretco" --body b', config(), clone("WorkOrg")).code).toBe(0);
+    expect(run('gh issue create -R WorkOrg/x --title a --body b', config(), clone("Mine")).code).toBe(2);
   });
   test("no word list blocks every issue write; issue tools from MCP are scanned", () => {
     expect(run('gh issue create -R me/x --title a', config("")).code).toBe(2);

@@ -26,8 +26,8 @@ test("a digest keeps typed turns and counts refusals by reason, compactions and 
 });
 
 test("an agent is tied to an item only when its repo is one of the item's", () => {
-  expect(tiesTo({ repos: ["storefront"] }, "control-room")).toBe(false);
-  expect(tiesTo({ repos: ["storefront"] }, "storefront")).toBe(true);
+  expect(tiesTo({ repos: ["shop_web"] }, "control-room")).toBe(false);
+  expect(tiesTo({ repos: ["shop_web"] }, "shop_web")).toBe(true);
   expect(tiesTo({ repos: ["x"] }, null)).toBe(true);
 });
 

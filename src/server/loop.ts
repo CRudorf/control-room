@@ -155,6 +155,7 @@ export function startLoop() {
   if (DEV) return;
   const check = () => {
     const now = new Date();
+    if (!tuning.scheduled()) return;
     if (now.getDay() % 6 === 0 || now.getHours() < tuning.loopFrom() || now.getHours() >= tuning.loopUntil()) return;
     // A failed start retries on the next check; a started one waits for next week.
     const last = load<LastRun>("loop_last");

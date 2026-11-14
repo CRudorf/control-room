@@ -1,0 +1,83 @@
+/* Farmstead: the board as a farm's ledger. A rack of pale straw boards, panes of parchment, headings in a pixel face. What's
+   yours in wheat gold, what waits in sprout green, what's asked of you in apple red. Its own fixed colours: the theme
+   doesn't change it. The World is framed in planks, its chat a wooden sign. html:root[...] outranks the default
+   skin's own tokens. */
+html:root[data-skin="farmstead"] {
+  --rack:#e4d2a4; --rack-2:#d8c38e; --panel:#f6edd6; --panel-2:#efe2c2; --ink:#3b2418; --ink-2:#6b4a2e; --ink-3:#9a7a58;
+  --rule:#d8c69e; --rule-2:#e6d8b6;
+  --s-mine:#f6e3a8; --s-wait:#d3e8c2; --s-ask:#f4c6b2; --s-park:#e8dfcc; --s-done:#d9edc9;
+  --h-mine:#b97a12; --h-wait:#4f8a3a; --h-ask:#c8442f; --h-park:#8a7a62; --h-done:#4f8a3a;
+  --pencil:#c8442f; --ok:#4f8a3a; --warn:#b97a12; --bad:#c8442f;
+  --strip-ink:#3b2418; --strip-ink-2:#6b4a2e;
+  --shadow:0 0 0 1px rgba(59,36,24,.18), 0 2px 0 rgba(59,36,24,.25);
+  --lift:0 0 0 2px #3b2418, 0 6px 0 rgba(59,36,24,.35), 0 14px 28px rgba(0,0,0,.25);
+  --accent:#4f8a3a; --accent-ink:#f6edd6;
+  color-scheme:light;
+}
+[data-skin="farmstead"] body { font-family:Nunito, system-ui, sans-serif; background:#e4d2a4 repeating-linear-gradient(to bottom, #e4d2a4 0 22px, #dac792 22px 24px); }
+[data-skin="farmstead"] h1, [data-skin="farmstead"] .strip .id b, [data-skin="farmstead"] .lifted .id b, [data-skin="farmstead"] .wide-head b, [data-skin="farmstead"] .wide-head .t { font-family:'Pixelify Sans', ui-monospace, monospace; font-weight:600; }
+[data-skin="farmstead"] .bay-h, [data-skin="farmstead"] .cols-h, [data-skin="farmstead"] .cols-h .cell, [data-skin="farmstead"] .cols-h .sorter, [data-skin="farmstead"] .pane h3, [data-skin="farmstead"] .loopline .st,
+[data-skin="farmstead"] .lifted .plan .st, [data-skin="farmstead"] .idmeta .kind, [data-skin="farmstead"] .st.label { font-family:'Pixelify Sans', ui-monospace, monospace; font-weight:600; letter-spacing:.02em; }
+/* The header: a painted sign board. */
+[data-skin="farmstead"] .top { background:#3f6a2c; border-bottom:4px solid #2f5222; color:#f6edd6; }
+[data-skin="farmstead"] .top .brand { color:#f6e3a8; font-family:'Pixelify Sans', monospace; font-weight:700; font-size:1.2em; }
+[data-skin="farmstead"] .top .brand-project { background:#f6e3a8; color:#3b2418; }
+[data-skin="farmstead"] .top .ctr { background:#f6edd6; color:var(--ink); border-color:#2f5222; }
+[data-skin="farmstead"] .top .ctr .l { color:var(--ink-3); }
+[data-skin="farmstead"] .top .iconbtn, [data-skin="farmstead"] .top .btn { background:transparent; color:#f6edd6; border-color:rgba(246,237,214,.35); }
+[data-skin="farmstead"] .top .iconbtn:hover, [data-skin="farmstead"] .top .btn:hover, [data-skin="farmstead"] .top .iconbtn.on { background:#f6e3a8; color:#3b2418; border-color:#f6e3a8; }
+[data-skin="farmstead"] .top .st, [data-skin="farmstead"] .top .dim { color:#d3e8c2; }
+[data-skin="farmstead"] .top input { background:#f6edd6; color:var(--ink); border-color:#2f5222; }
+[data-skin="farmstead"] .top kbd { background:rgba(0,0,0,.2); color:#f6edd6; border-color:rgba(246,237,214,.35); }
+/* Buttons: chunky wooden keys with a hard shadow. */
+[data-skin="farmstead"] .btn, [data-skin="farmstead"] .iconbtn, [data-skin="farmstead"] .chip { border-radius:3px; }
+[data-skin="farmstead"] .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:#2f5222; box-shadow:0 2px 0 #2f5222; }
+[data-skin="farmstead"] .btn.primary:hover { background:#5a9a44; }
+[data-skin="farmstead"] input, [data-skin="farmstead"] textarea, [data-skin="farmstead"] select { background:#fffaf0; color:var(--ink); border-color:var(--rule); caret-color:var(--accent); }
+[data-skin="farmstead"] .pane, [data-skin="farmstead"] .lifted { border-radius:4px; border:2px solid #3b2418; }
+[data-skin="farmstead"] .strip { border-radius:3px; }
+[data-skin="farmstead"] .strip.sel { box-shadow:0 0 0 2px #3b2418, 0 3px 0 rgba(59,36,24,.35); }
+[data-skin="farmstead"] .rank.blocking { background:#c8442f; color:#fff; }
+[data-skin="farmstead"] .rank.important { background:#e08a2b; color:#3b2418; }
+[data-skin="farmstead"] .rank.should-do { background:#f0c94a; color:#3b2418; }
+[data-skin="farmstead"] .rank.nit { background:#e8dfcc; color:var(--ink); }
+[data-skin="farmstead"] .console { background:#2a1c12; color:#f6e3a8; border-color:#3b2418; }
+[data-skin="farmstead"] .chat-msg.you .chat-body { background:#d3e8c2; border-color:#a8c890; }
+[data-skin="farmstead"] ::selection { background:#f6e3a8; color:#3b2418; }
+
+/* The World framed in planks: the view drawn in chunky pixels, panels and chat as wooden signs with parchment. */
+[data-skin="farmstead"] .world {
+  --rock:repeating-linear-gradient(to bottom, #8a5a35 0 6px, #7a4a2b 6px 7px);
+  --well:linear-gradient(#f6edd6, #f6edd6); --paper:linear-gradient(#f6edd6, #f6edd6);
+  --frame:0 0 0 2px #3b2418, 0 3px 0 2px rgba(59,36,24,.5); --stone:inset 1px 1px 0 #c48a55, inset -1px -1px 0 #4e2f1a;
+  font:600 15px Nunito, system-ui, sans-serif; text-shadow:none;
+}
+[data-skin="farmstead"] .world-tabs button { background:#7a4a2b; color:#f6e3a8; border-color:#3b2418; text-shadow:none; font-family:'Pixelify Sans', monospace !important; font-size:16px; }
+[data-skin="farmstead"] .world-tabs button:hover { color:#fff; }
+[data-skin="farmstead"] .world-tabs button.on { background:#f6e3a8; color:#3b2418; }
+[data-skin="farmstead"] .world-panel { color:var(--ink); }
+[data-skin="farmstead"] .world-panel h4 { color:#3f6a2c; font-family:'Pixelify Sans', monospace !important; font-size:18px; }
+[data-skin="farmstead"] .world-panel > button { color:var(--ink); text-shadow:none; }
+[data-skin="farmstead"] .world-panel > button.mine { color:#b97a12; } [data-skin="farmstead"] .world-panel > button.asked { color:#c8442f; }
+[data-skin="farmstead"] .world-panel > button:hover { color:#000; }
+[data-skin="farmstead"] .world-panel .none { color:#4f8a3a; }
+[data-skin="farmstead"] .world-opts button, [data-skin="farmstead"] .world-close { background:#7a4a2b; color:#f6e3a8; text-shadow:none; }
+[data-skin="farmstead"] .world-opts button.on { color:#d3e8c2; }
+[data-skin="farmstead"] .world-chat { color:var(--ink); }
+[data-skin="farmstead"] .world-log .blue { color:#2f6a9a; } [data-skin="farmstead"] .world-log .red { color:#c8442f; } [data-skin="farmstead"] .world-log .you { color:#b97a12; }
+[data-skin="farmstead"] .world-convo .who { background:linear-gradient(#f6edd6, rgba(246,237,214,.94)); }
+[data-skin="farmstead"] .world-convo .who b, [data-skin="farmstead"] .world-convo .lbl, [data-skin="farmstead"] .world-convo .who button { color:#3f6a2c; }
+[data-skin="farmstead"] .world-convo .who span { color:var(--ink-3); }
+[data-skin="farmstead"] .world-convo .ctx, [data-skin="farmstead"] .world-convo .recap { color:var(--ink); border-color:var(--rule); }
+[data-skin="farmstead"] .world-stats .stat { background:linear-gradient(to right, rgba(79,138,58,.3) var(--fill, 0%), #efe2c2 var(--fill, 0%)); border-color:#d8c69e; box-shadow:none; }
+[data-skin="farmstead"] .world-stats .stat .n, [data-skin="farmstead"] .world-stats .stat .lv { color:var(--ink); text-shadow:none; }
+[data-skin="farmstead"] .world-total { color:#3f6a2c; }
+[data-skin="farmstead"] .world-how { color:var(--ink-3); }
+[data-skin="farmstead"] .world-xpbox { background:#f6edd6; border:2px solid #3b2418; color:#3b2418; }
+[data-skin="farmstead"] .world-menu { background:#f6edd6; border:2px solid #3b2418; }
+[data-skin="farmstead"] .world-menu-h { background:#3f6a2c; color:#f6edd6; }
+[data-skin="farmstead"] .wl-name { color:#fff; font-family:'Pixelify Sans', monospace; text-shadow:1px 0 #3b2418, -1px 0 #3b2418, 0 1px #3b2418, 0 -1px #3b2418; }
+[data-skin="farmstead"] .wl-chat { color:#f6e3a8; font-family:'Pixelify Sans', monospace; text-shadow:1px 0 #3b2418, -1px 0 #3b2418, 0 1px #3b2418, 0 -1px #3b2418; }
+[data-skin="farmstead"] .wl-area, [data-skin="farmstead"] .wl-task { background:rgba(246,237,214,.94); color:var(--ink); border:2px solid #3b2418; border-radius:3px; }
+[data-skin="farmstead"] .wl-area .h, [data-skin="farmstead"] .wl-task.wl-open .h { color:#3f6a2c; font-family:'Pixelify Sans', monospace; }
+[data-skin="farmstead"] .wl-task.wl-open { background:#f6edd6; }

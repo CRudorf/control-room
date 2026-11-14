@@ -9,11 +9,13 @@ Uses REST API v2 for reads: v2 returns descriptions/comments as wiki markup
 walked to be readable. v2 is fully supported on Jira Cloud.
 """
 import base64
+import http.client
 import datetime
 import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,6 +51,19 @@ def die(msg, code=1):
     sys.exit(code)
 
 
+def _read(req, method, tries=3):
+    """The response body. A GET that drops mid-response (IncompleteRead, reset) is retried; other methods are
+    not, since the server may have acted on them."""
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.read()
+        except (http.client.IncompleteRead, ConnectionResetError, TimeoutError):
+            if method != "GET" or attempt == tries - 1:
+                raise
+            time.sleep(1 + attempt)
+
+
 def request(path, method="GET", params=None, body=None, version=2, raw=False):
     url = f"{CFG['site']}/rest/api/{version}{path}"
     if params:
@@ -61,8 +76,7 @@ def request(path, method="GET", params=None, body=None, version=2, raw=False):
     if data:
         req.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(req) as resp:
-            payload = resp.read()
+        payload = _read(req, method)
     except urllib.error.HTTPError as err:
         detail = err.read().decode("utf-8", "replace")[:600]
         if err.code == 401:

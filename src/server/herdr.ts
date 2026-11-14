@@ -96,6 +96,9 @@ let error: string | null = null;
 let onChange: () => void = () => {};
 
 export const herdrState = () => ({ agents, up, error });
+// The agent pane the user last had focused: a popup or another program taking focus doesn't clear it.
+let lastFocused: string | null = null;
+export const focusedPane = () => lastFocused;
 
 /** The control room is about to prompt this pane itself: the turn it starts isn't the user replying, so its finish notifies. */
 export const promptedByBoard = (pane: string) => void byBoard.add(pane);
@@ -186,6 +189,7 @@ async function snapshot() {
     const changed = JSON.stringify(next) !== JSON.stringify(agents);
     const panesChanged = next.map((a) => a.pane).join() !== agents.map((a) => a.pane).join();
     agents = next;
+    lastFocused = next.find((a) => a.focused)?.pane ?? lastFocused;
     up = true;
     error = null;
     if (panesChanged) resubscribe();

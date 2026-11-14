@@ -23,11 +23,13 @@ export type Skin = {
 };
 
 export const SKINS: Skin[] = [
-  { id: "default", name: "Default", blurb: "Flight strips on a rack, light or dark.", themed: true, minimap: false, world: false, fonts: [], swatch: ["#dbe2ea", "#f2dcab", "#b6e0d7", "#f6c3b4"] },
+  { id: "default", name: "Default", blurb: "Flight strips on a rack, light or dark, and a World of an office park drawn like a cartoon.", themed: true, minimap: false, world: true, fonts: [], swatch: ["#dbe2ea", "#f2dcab", "#b6e0d7", "#f6c3b4"] },
   { id: "osrs", name: "Old School RS", blurb: "Stone, parchment and a minimap, after the 2007 game client.", themed: false, minimap: true, world: true,
     fonts: ["https://fonts.googleapis.com/css2?family=Pixelify+Sans&display=swap"], swatch: ["#4b4032", "#d3c4a0", "#ffff00", "#ff981f"] },
   { id: "wasteland", name: "Wasteland", blurb: "Green phosphor on a dead terminal, and a World of scrap shacks under a dust-orange sky, drawn sharp with shadows and firelight.", themed: false, minimap: false, world: true,
     fonts: ["https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap"], swatch: ["#0c110b", "#5dff7a", "#b4835a", "#ffa040"] },
+  { id: "farmstead", name: "Farmstead", blurb: "A farm's ledger in planks and parchment, and a World of a little valley farm drawn top-down in pixel art.", themed: false, minimap: false, world: true,
+    fonts: ["https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700&display=swap"], swatch: ["#3f6a2c", "#e4d2a4", "#4f8a3a", "#c8442f"] },
   ...EXTRA_SKINS,
 ];
 

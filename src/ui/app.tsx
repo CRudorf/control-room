@@ -526,7 +526,7 @@ const KEYS: [string, string][] = [
   ["p", "park the selected item (again to unpark)"], ["x", "remove the selected item's PRs"], ["b", "dependency a PR on another PR or a step"], ["l", "move a PR into another item, or out"], ["o", "take over someone else's PR (review requests)"], ["e", "Removed: the remove list"],
   ["/", "filter by text"], ["g", "group by lane, repo or effort (your work to ship, in points)"], ["f", "focus mode"], ["z", "expand a pane to the whole work area (again, or esc, for the default view)"],
   ["a", "start an agent on the selected item"], ["m", "mark the selected item's feedback addressed"], ["w", "wait on the author (review requests)"], ["⌘⏎", "start it, from the agent sheet"],
-  ["t", "Tidy herdr tabs"], ["q", "Routines: daily and weekly runs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: look, project, PRs, polling, agents, schedule"], ["w", "World, under the Old School RS skin"], ["r", "refresh from GitHub now"],
+  ["t", "Tidy herdr tabs"], ["q", "Routines: daily and weekly runs"], ["h", "History"], ["v", "Finished"], ["i", "Metrics"], ["c", "Sessions: every Claude session"], ["d", "Docs: glossary, ADRs and statecharts"], [",", "Settings: look, project, PRs, polling, agents, schedule"], ["w", "World: the board as a place to walk round"], ["r", "refresh from GitHub now"],
   ["?", "this list"], ["esc", "back / clear filters"],
 ];
 

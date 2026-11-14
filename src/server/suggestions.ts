@@ -308,7 +308,7 @@ export function startSuggestions(items: () => WorkItem[], changed: () => void, a
     if (now.getHours() >= tuning.suggestionsFrom()) {
       const day = now.toDateString();
       if (load<string>("suggest_judged_day") !== day) { save("suggest_judged_day", day); await judgeSuggestions("schedule"); }
-      if (now.getDay() === 1 && load<ArchRun>("suggest_arch")?.week !== weekOf(now.toISOString()))
+      if (tuning.scheduled() && now.getDay() === 1 && load<ArchRun>("suggest_arch")?.week !== weekOf(now.toISOString()))
         await runArchitecture("schedule", arch).catch((e) => log("architecture pass failed:", (e as Error).message));
     }
     changed();

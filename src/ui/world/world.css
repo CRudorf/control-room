@@ -133,3 +133,54 @@
   .world-side { grid-row:auto; grid-column:auto; flex-direction:row; flex-wrap:wrap; align-items:flex-start; }
   .world-panel { min-height:120px; flex:1 1 200px; }
 }
+
+/* The default skin's World, the office park: framed like the board itself, panels on the rack in the board's own
+   tokens and type, the view with rounded corners, labels as white pills, light or dark with the theme. */
+html:not([data-skin]) .world {
+  --rock:var(--rack); --well:var(--panel); --paper:var(--panel); --frame:var(--shadow); --stone:none;
+  background:var(--rack); font:15px/1.4 Archivo, system-ui, sans-serif; text-shadow:none; -webkit-font-smoothing:antialiased;
+}
+html:not([data-skin]) .world-view { border:0; border-radius:10px; background:#a8d8f5; box-shadow:var(--lift); }
+html:not([data-skin]) .world-view canvas { image-rendering:auto; }
+html:not([data-skin]) .world-hover { color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6); font-weight:600; }
+html:not([data-skin]) .world-hover .npc, html:not([data-skin]) .world-menu .npc { color:#f0c35a; }
+html:not([data-skin]) .world-hover .obj, html:not([data-skin]) .world-menu .obj { color:#7fe0d0; }
+html:not([data-skin]) .world-mm canvas { border:4px solid var(--panel); background:var(--panel); box-shadow:var(--shadow); image-rendering:auto; }
+html:not([data-skin]) .world-compass { background:var(--panel); border:2px solid var(--rule); box-shadow:var(--shadow); }
+html:not([data-skin]) .world-tabs { gap:4px; }
+html:not([data-skin]) .world-tabs button { background:var(--panel); color:var(--ink-2); border:1px solid var(--rule); border-radius:999px; box-shadow:none; text-shadow:none; font-weight:600; font-size:13px; }
+html:not([data-skin]) .world-tabs button:hover { color:var(--ink); }
+html:not([data-skin]) .world-tabs button.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+html:not([data-skin]) .world-panel { border:0; border-radius:10px; background:var(--panel); box-shadow:var(--shadow); padding:8px 10px; }
+html:not([data-skin]) .world-panel h4 { color:var(--ink-3); font:600 12px 'Archivo Narrow', system-ui, sans-serif !important; letter-spacing:.08em !important; text-transform:uppercase; text-align:left; }
+html:not([data-skin]) .world-panel > button { color:var(--ink); text-shadow:none; padding:3px 0; border-bottom:1px solid var(--rule-2); }
+html:not([data-skin]) .world-panel > button.mine { color:var(--h-mine); } html:not([data-skin]) .world-panel > button.asked { color:var(--h-ask); }
+html:not([data-skin]) .world-panel > button:hover { color:var(--accent); }
+html:not([data-skin]) .world-panel .none { color:var(--ok); }
+html:not([data-skin]) .world-opts button, html:not([data-skin]) .world-close { background:var(--panel); color:var(--ink); border:1px solid var(--rule); border-radius:6px; text-shadow:none; box-shadow:none; }
+html:not([data-skin]) .world-opts button.on { color:var(--ok); border-color:var(--ok); }
+html:not([data-skin]) .world-chat { border:0; border-radius:10px; background:var(--panel); box-shadow:var(--shadow); color:var(--ink); }
+html:not([data-skin]) .world-log .blue { color:var(--h-wait); } html:not([data-skin]) .world-log .red { color:var(--h-ask); } html:not([data-skin]) .world-log .you { color:var(--accent); }
+html:not([data-skin]) .world-convo .who { background:var(--panel); }
+html:not([data-skin]) .world-convo .who b, html:not([data-skin]) .world-convo .lbl, html:not([data-skin]) .world-convo .who button { color:var(--h-ask); }
+html:not([data-skin]) .world-convo .who span { color:var(--ink-3); }
+html:not([data-skin]) .world-convo .ctx, html:not([data-skin]) .world-convo .recap { color:var(--ink); border-color:var(--rule); }
+html:not([data-skin]) .world-menu { background:var(--panel); border:1px solid var(--rule); border-radius:8px; box-shadow:var(--lift); padding:0 0 4px; }
+html:not([data-skin]) .world-menu-h { background:var(--rack-2); color:var(--ink-2); margin:0 0 2px; border-radius:8px 8px 0 0; }
+html:not([data-skin]) .world-menu button { color:var(--ink); text-shadow:none; }
+html:not([data-skin]) .world-menu button:hover { background:var(--rack); }
+html:not([data-skin]) .world-stats .stat { background:linear-gradient(to right, var(--s-done) var(--fill, 0%), var(--panel-2) var(--fill, 0%)); border:1px solid var(--rule); border-radius:6px; box-shadow:none; }
+html:not([data-skin]) .world-stats .stat i { border:0; border-radius:2px; }
+html:not([data-skin]) .world-stats .stat .n, html:not([data-skin]) .world-stats .stat .lv { color:var(--ink); text-shadow:none; }
+html:not([data-skin]) .world-total { color:var(--ink); font-weight:700; }
+html:not([data-skin]) .world-how { color:var(--ink-3); }
+html:not([data-skin]) .world-xpbox { background:var(--panel); border:0; border-radius:999px; color:var(--ink); font-weight:700; box-shadow:var(--shadow); }
+html:not([data-skin]) .wl { text-shadow:none; }
+html:not([data-skin]) .wl-name { color:#1b1f24; background:rgba(255,255,255,.88); border-radius:999px; padding:0 7px; font-size:12px; font-weight:600; }
+html:not([data-skin]) .wl-chat { color:#1b1f24; background:#fff; border:2px solid #1b1f24; border-radius:10px; padding:1px 8px; font-size:13px; }
+html:not([data-skin]) .wl-area { background:rgba(255,255,255,.9); color:#4b535c; box-shadow:0 2px 6px rgba(30,40,50,.18); }
+html:not([data-skin]) .wl-area .h { color:#1b1f24; font-weight:700; }
+html:not([data-skin]) .wl-task { background:rgba(255,255,255,.85); color:#4b535c; }
+html:not([data-skin]) .wl-task.wl-open { background:#fff; border:1px solid #c3cad0; color:#1b1f24; }
+html:not([data-skin]) .wl-task.wl-open .h { color:#1b1f24; }
+html:not([data-skin]) .wl-task .dim { color:#7a828b; }

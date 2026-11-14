@@ -10,6 +10,7 @@
     "ship": "bun scripts/ship.ts",
     "open": "bun src/server/open.ts",
     "item": "bun src/server/item.ts",
+    "board": "bun src/server/board.ts",
     "prototype": "bun prototype/layout/strips.html"
   },
   "dependencies": {

@@ -2,8 +2,12 @@ import { CLAUDE_DIR } from "./repos";
 import { assertInProject, repoPath } from "./repos";
 // Local verification (GLOSSARY: Verification run): one commit of a repo, running on a free port with
 // seeded data, and a folder under STATE_DIR/verify/<id>/ that keeps the evidence and every log.
+// A profile with `remote` tests an app that already runs on another machine: the run starts no app, checks
+// the machine answers, and its stop command brings the folder home and clears the machine.
+// A change can span repos: a round records each repo's commit, and a new round for the same work item starts
+// from the last round's scripts, data and check list, so a re-run tests the new commits the same way.
 // The agent writes results.json. Only the user writes confirm.json, so an agent can't sign off its own work.
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, openSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -28,7 +32,17 @@ export type VerifyRun = {
   logins?: Login[];
   /** The Claude Code project folder of the session that tests this run. */
   transcriptDir?: string | null;
+  /** The machine the app runs on, for a remote profile. The run has no process of its own here. */
+  machine?: string | null;
+  /** Every repo in the change and the commit this round tests, `repo` included. */
+  commits?: Record<string, string>;
+  /** The round this one followed, whose scripts and checks it started from. */
+  previous?: string | null;
 };
+
+/** A run's state now: a local run whose app has exited has stopped; a remote run lives until it is stopped. */
+export const liveState = (r: Pick<VerifyRun, "state" | "machine" | "pid">, isAlive: (pid: number | null) => boolean): RunState =>
+  r.state === "running" && !r.machine && !isAlive(r.pid) ? "stopped" : r.state;
 export type Stage = { name: string; state: "done" | "now" | "todo" | "failed" };
 export type VerifyView = VerifyRun & { checks: Check[]; confirms: Record<string, Confirm>; files: string[]; logEmails: LogEmail[]; session: { pane: string; status: string } | null; stages: Stage[] };
 
@@ -43,7 +57,26 @@ export function stagesOf(r: Pick<VerifyRun, "state" | "agent" | "error">, checks
   return seq.map(([name, done], i) => ({ name, state: done ? "done" : i === at ? (r.state === "failed" ? "failed" : "now") : "todo" }));
 }
 export type Login = { label: string; path: string; user: string; password: string; userField: string; passwordField: string; permissions?: string };
-export type Profile = { logins?: Login[]; setup: string[][]; links?: string[]; start: string[]; env?: Record<string, string>; health: string };
+/**
+ * How a repo's app comes up for a run. `remote`: the app already runs on `machine`; `check` must exit 0 when
+ * it answers, `url` is where the user opens it, and `stop` runs when the run stops. Commands take {dir} (the
+ * run folder) and {id}.
+ */
+export type Profile = { logins?: Login[]; setup: string[][]; links?: string[]; start: string[]; env?: Record<string, string>; health: string;
+  remote?: { machine: string; url: string; check: string[]; stop?: string[] } };
+
+/** The commits of a new round: the last round's, then the repos named now, then the run's own repo. */
+export function roundCommits(prev: Pick<VerifyRun, "repo" | "commit" | "commits"> | null, repo: string, commit: string, also: Record<string, string> = {}): Record<string, string> {
+  const before = prev ? { [prev.repo]: prev.commit, ...(prev.commits ?? {}) } : {};
+  return { ...before, ...also, [repo]: commit };
+}
+const sameCommits = (a: Record<string, string>, b: Record<string, string>) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
+
+/** The files a round hands to the next: its scripts, data and notes. Evidence, results and verdicts stay with their round. */
+const OWN = new Set(["run.json", "results.json", "confirm.json", "log-emails.json", "transcript.jsonl", "transcript.txt", "meta.json"]);
+export const carried = (names: string[]) => names.filter((n) => /\.(sh|cjs|mjs|js|ts|py|sql|md|json|txt)$/i.test(n) && !OWN.has(n) && !/\.log$/i.test(n));
+/** The checks a new round starts from: the same list, each one pending again, with no note or evidence. */
+export const resetChecks = (checks: Check[]): Check[] => checks.map(({ note: _n, evidence: _e, status: _s, ...c }) => ({ ...c, status: "pending" as const }));
 
 const dirOf = (id: string) => { if (!ID.test(id)) throw new Error("bad run id"); return join(VERIFY_DIR, id); };
 const readJson = <T,>(f: string, fallback: T): T => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return fallback; } };
@@ -140,7 +173,7 @@ export function getRun(id: string): VerifyView | null {
   const dir = dirOf(id);
   // Setup runs inside this server, so a restart ends it. A run left "starting" by an earlier server failed.
   if (r.state === "starting" && !settingUp.has(id)) { const failed = { ...r, state: "failed" as const, error: "the control room restarted during setup", step: null, stoppedAt: new Date().toISOString() }; save(failed); return getRun(id); }
-  const state = r.state === "running" && !alive(r.pid) ? "stopped" : r.state;
+  const state = liveState(r, alive);
   syncTranscript(r);
   const logEmails = scanRunLog(id);
   const checks = readJson<{ checks: Check[] }>(join(dir, "results.json"), { checks: [] }).checks ?? [];
@@ -215,39 +248,54 @@ const freePort = () => new Promise<number>((res, rej) => {
   s.listen(0, "127.0.0.1", () => { const a = s.address(); const p = typeof a === "object" && a ? a.port : 0; s.close(() => res(p)); });
 });
 
-/** Runs one setup command in the user's login shell, so uv and npm resolve under launchd. Output goes to the log. */
-async function sh(cmd: string[], cwd: string, log: string, env: Record<string, string> = {}) {
-  const p = Bun.spawn(["/bin/zsh", "-lc", 'exec "$@"', "--", ...cmd], { cwd, env: { ...process.env, ...env }, stdout: Bun.file(log), stderr: Bun.file(log) });
-  const code = await p.exited;
+/** Runs one setup command in the user's login shell, so uv and npm resolve under launchd. Output is added to the end of the log. */
+export async function sh(cmd: string[], cwd: string, log: string, env: Record<string, string> = {}) {
+  const fd = openSync(log, "a");
+  const p = Bun.spawn(["/bin/zsh", "-lc", 'exec "$@"', "--", ...cmd], { cwd, env: { ...process.env, ...env }, stdout: fd, stderr: fd });
+  const code = await p.exited.finally(() => closeSync(fd));
   if (code !== 0) throw new Error(`${cmd.join(" ")} exited ${code}. See ${log.split("/").pop()}`);
 }
 
 const short = (repo: string) => repo.split("/").pop()!;
 
 /** Starts a run: returns at once with the id, and the setup continues in the background. Dev records it and starts nothing. */
-export async function startRun(o: { repo: string; ref: string; key: string | null; pr: string | null; item: string | null; cwd?: string | null; agentPrompt?: (dir: string, id: string) => string; start?: (id: string, prompt: string) => Promise<{ name: string }> }) {
+export async function startRun(o: { repo: string; ref: string; also?: { repo: string; ref: string }[]; key: string | null; pr: string | null; item: string | null; cwd?: string | null; agentPrompt?: (dir: string, id: string) => string; start?: (id: string, prompt: string) => Promise<{ name: string }> }) {
   assertInProject(o.repo);
   const name = short(o.repo);
   const profile = profileFor(name);
   if (!profile) throw new Error(`no verification profile at ~/.config/control-room/verify/${name}.json`);
   const clone = repoPath(name);
   const commit = (await read(["git", "-C", clone, "rev-parse", `${o.ref}^{commit}`])).trim();
-  // One round for one commit, and one live round for a work item: an older round's app stops, and its evidence stays.
+  const also: Record<string, string> = {};
+  for (const a of o.also ?? []) { assertInProject(a.repo); also[short(a.repo)] = (await read(["git", "-C", repoPath(short(a.repo)), "rev-parse", `${a.ref}^{commit}`])).trim(); }
+  // One round for one set of commits, and one live round for a work item: an older round's app stops, and its evidence stays.
   const rounds = o.key ? listRuns(o.key) : [];
-  const same = rounds.find((x) => x.commit === commit && (x.state === "running" || x.state === "starting"));
+  const prev = rounds[0] ?? null;
+  const commits = roundCommits(prev, name, commit, also);
+  const same = rounds.find((x) => sameCommits(roundCommits(null, x.repo, x.commit, x.commits ?? {}), commits) && (x.state === "running" || x.state === "starting"));
   if (same) return { id: same.id, dir: dirOf(same.id), already: true };
-  for (const x of rounds.filter((x) => x.state === "running")) await stopRun({ item: o.item, trigger: "verify" }, x.id).catch(() => {});
+  // The new round takes over the machines, so a replaced round stops without clearing them.
+  for (const x of rounds.filter((x) => x.state === "running")) await stopRun({ item: o.item, trigger: "verify" }, x.id, { replaced: true }).catch(() => {});
   const id = `${(o.key ?? name).toLowerCase()}-${commit.slice(0, 7)}-${Date.now().toString(36)}`;
   const dir = dirOf(id);
   mkdirSync(dir, { recursive: true });
-  const r: VerifyRun = { id, key: o.key, pr: o.pr, repo: name, commit, state: "starting", step: "worktree", error: null, port: null, url: null, pid: null, worktree: null, agent: null,
+  if (prev) carryOver(prev.id, dir);
+  const r: VerifyRun = { id, key: o.key, pr: o.pr, repo: name, commit, commits, previous: prev?.id ?? null, state: "starting", step: "worktree", error: null, port: null, url: null, pid: null, worktree: null, agent: null,
     startedAt: new Date().toISOString(), stoppedAt: null, login: profile.logins?.[0] ? { user: profile.logins[0].user, password: profile.logins[0].password } : null, logins: profile.logins ?? [], transcriptDir: o.cwd ? projectDirOf(o.cwd) : null };
   save(r);
   note({ item: o.item, trigger: "verify" }, "verify-start", id, isDev() ? "dry run" : "started", { detail: { commit, pr: o.pr } });
   if (isDev()) { save({ ...r, state: "stopped", step: null, stoppedAt: r.startedAt }); return { id, dir, dryRun: true }; }
   settingUp.add(id);
-  void bringUp(r, profile, clone, o).finally(() => settingUp.delete(id)).catch((e) => { save({ ...load(id)!, state: "failed", error: (e as Error).message, stoppedAt: new Date().toISOString() }); note({ item: o.item, trigger: "verify" }, "verify-failed", id, (e as Error).message.slice(0, 200)); });
+  void (profile.remote ? bringUpRemote(r, profile.remote, o) : bringUp(r, profile, clone, o)).finally(() => settingUp.delete(id)).catch((e) => { save({ ...load(id)!, state: "failed", error: (e as Error).message, stoppedAt: new Date().toISOString() }); note({ item: o.item, trigger: "verify" }, "verify-failed", id, (e as Error).message.slice(0, 200)); });
   return { id, dir };
+}
+
+/** Copies a round's scripts and data into a new round's folder, and its checks as pending. */
+function carryOver(fromId: string, dir: string) {
+  const from = dirOf(fromId);
+  for (const n of carried(readdirSync(from).filter((n) => statSync(join(from, n)).isFile()))) copyFileSync(join(from, n), join(dir, n));
+  const checks = readJson<{ checks: Check[] }>(join(from, "results.json"), { checks: [] }).checks ?? [];
+  if (checks.length) writeFileSync(join(dir, "results.json"), JSON.stringify({ checks: resetChecks(checks) }, null, 1));
 }
 
 async function bringUp(r0: VerifyRun, p: Profile, clone: string, o: Parameters<typeof startRun>[0]) {
@@ -277,15 +325,44 @@ async function bringUp(r0: VerifyRun, p: Profile, clone: string, o: Parameters<t
   if (o.start && o.agentPrompt) { const a = await o.start(r.id, o.agentPrompt(dir, r.id)); r = { ...load(r.id)!, agent: a.name }; save(r); }
 }
 
-/** Stops the app and removes the temporary worktree. The evidence folder stays. */
-export async function stopRun(ctx: Ctx, id: string) {
+/** A remote run: no worktree and no app of its own, only a check that the machine's app answers. */
+async function bringUpRemote(r0: VerifyRun, remote: NonNullable<Profile["remote"]>, o: Parameters<typeof startRun>[0]) {
+  let r: VerifyRun = { ...r0, step: `checking ${remote.machine}`, machine: remote.machine, url: remote.url };
+  save(r);
+  const dir = dirOf(r.id);
+  await sh(remote.check.map((x) => fill(x, { dir, id: r.id })), dir, join(dir, "setup.log"));
+  r = { ...r, state: "running", step: null };
+  save(r);
+  note({ item: o.item, trigger: "verify" }, "verify-up", r.id, `${remote.machine} ${remote.url}`);
+  if (o.start && o.agentPrompt) { const a = await o.start(r.id, o.agentPrompt(dir, r.id)); r = { ...load(r.id)!, agent: a.name }; save(r); }
+}
+
+/** The stop commands of a remote round: one for each machine that a repo of the change runs on, each once. */
+export function stopCommands(r: Pick<VerifyRun, "repo" | "commits" | "machine">, profile: (repo: string) => Profile | null): string[][] {
+  if (!r.machine) return [];
+  const seen = new Set<string>();
+  return [r.repo, ...Object.keys(r.commits ?? {})].flatMap((repo) => {
+    const s = profile(repo)?.remote?.stop;
+    if (!s || seen.has(s.join("\0"))) return [];
+    seen.add(s.join("\0"));
+    return [s];
+  });
+}
+
+/**
+ * Stops the app and removes the temporary worktree. A remote round runs the stop command of each machine its
+ * change ran on, unless a newer round `replaced` it and now uses those machines. The evidence folder stays.
+ */
+export async function stopRun(ctx: Ctx, id: string, o: { replaced?: boolean } = {}) {
   const r = load(id);
   if (!r) throw new Error("no such run");
+  for (const stop of o.replaced ? [] : stopCommands(r, profileFor))
+    await sh(stop.map((x) => fill(x, { dir: dirOf(id), id })), dirOf(id), join(dirOf(id), "setup.log")).catch((e) => note(ctx, "verify-stop", id, (e as Error).message.slice(0, 200)));
   if (r.port) await read(["/bin/sh", "-c", `lsof -ti tcp:${r.port} | xargs kill 2>/dev/null; true`]).catch(() => {});
   if (r.pid && alive(r.pid)) { try { process.kill(r.pid); } catch {} }
   if (r.worktree && existsSync(r.worktree)) await read(["git", "-C", repoPath(r.repo), "worktree", "remove", "--force", r.worktree]).catch(() => {});
   save({ ...r, state: "stopped", step: null, pid: null, stoppedAt: new Date().toISOString() });
-  note(ctx, "verify-stop", id, "stopped");
+  note(ctx, "verify-stop", id, o.replaced ? "replaced by a newer round" : "stopped");
 }
 
 const sinceSeen = new Map<string, number | null>();

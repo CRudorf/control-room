@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fernetKey, findLogEmails, fill, projectDirOf, runFile, transcriptText, stagesOf, summarize, type Check } from "./verify";
+import { sh, carried, fernetKey, findLogEmails, fill, liveState, projectDirOf, resetChecks, roundCommits, runFile, stopCommands, transcriptText, stagesOf, summarize, type Check, type Profile } from "./verify";
 
 const c = (id: string, status: Check["status"]): Check => ({ id, title: id, status });
 
@@ -54,4 +54,41 @@ test("a run's form key is in Fernet's format", () => {
   const k = fernetKey();
   expect(k).toMatch(/^[A-Za-z0-9_-]{43}=$/);
   expect(Buffer.from(k.replace(/-/g, "+").replace(/_/g, "/"), "base64").length).toBe(32);
+});
+
+test("a local run stops with its app; a run on another machine lives until it is stopped", () => {
+  const dead = () => false;
+  expect(liveState({ state: "running", machine: null, pid: 42 }, dead)).toBe("stopped");
+  expect(liveState({ state: "running", machine: "box", pid: null }, dead)).toBe("running");
+  expect(liveState({ state: "stopped", machine: "box", pid: null }, dead)).toBe("stopped");
+});
+
+test("a round records every repo's commit: the last round's, then the ones named now, then its own", () => {
+  expect(roundCommits(null, "pms", "c1")).toEqual({ pms: "c1" });
+  const prev = { repo: "bh", commit: "b1", commits: { bh: "b1", dha: "d1", pms: "p1" } };
+  expect(roundCommits(prev, "pms", "p2")).toEqual({ bh: "b1", dha: "d1", pms: "p2" });
+  expect(roundCommits(prev, "pms", "p2", { dha: "d2" })).toEqual({ bh: "b1", dha: "d2", pms: "p2" });
+  expect(roundCommits({ repo: "bh", commit: "b0" }, "pms", "p1")).toEqual({ bh: "b0", pms: "p1" });
+});
+
+test("a new round gets the last round's scripts and data, and its checks pending with no evidence", () => {
+  expect(carried(["pms.cjs", "reset-env.sh", "data_bh.py", "test-data-core.sql", "conditions.md", "run.json", "results.json", "confirm.json", "server.log", "a.png", "transcript.txt"]))
+    .toEqual(["pms.cjs", "reset-env.sh", "data_bh.py", "test-data-core.sql", "conditions.md"]);
+  const checks: Check[] = [{ id: "a", title: "A", criterion: "1", status: "fail", note: "x", evidence: ["a.png"] }];
+  expect(resetChecks(checks)).toEqual([{ id: "a", title: "A", criterion: "1", status: "pending" }]);
+});
+
+test("stopping a round clears each machine its change ran on, once; a local round has none", () => {
+  const remote = (machine: string, stop: string[]): Profile => ({ setup: [], start: [], health: "", remote: { machine, url: "u", check: ["true"], stop } });
+  const profiles: Record<string, Profile> = { bh: remote("box", ["box.sh"]), dha: remote("box", ["box.sh"]), pms: remote("win", ["win.sh"]) };
+  expect(stopCommands({ repo: "pms", machine: "win", commits: { bh: "1", dha: "2", pms: "3" } }, (r) => profiles[r] ?? null)).toEqual([["win.sh"], ["box.sh"]]);
+  expect(stopCommands({ repo: "bh", machine: null, commits: { bh: "1" } }, (r) => profiles[r] ?? null)).toEqual([]);
+});
+
+test("each setup command adds to the log instead of writing over it", async () => {
+  const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "vlog-"));
+  const log = `${dir}/setup.log`;
+  await sh(["echo", "first command"], dir, log);
+  await sh(["echo", "second"], dir, log);
+  expect(require("node:fs").readFileSync(log, "utf8")).toBe("first command\nsecond\n");
 });

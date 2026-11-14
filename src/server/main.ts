@@ -8,7 +8,7 @@ import { startFeedbackTask } from "./feedbacktask";
 import type { Move } from "../shared/types";
 import { markAddressed, postReplies, rerequest, rerunCi, resolveThreads, updateBranch, type Reply } from "./actions";
 import { keepAgent } from "./spentsweep";
-import { closeAgent, dismissAgent, focusAgent, herdrReady, herdrState, readAgent, sendKeys, sendToAgent, typeInto, type Typed } from "./herdr";
+import { closeAgent, dismissAgent, focusAgent, focusedPane, herdrReady, herdrState, readAgent, sendKeys, sendToAgent, typeInto, type Typed } from "./herdr";
 import { db } from "./db";
 import { sessions } from "./sessions";
 import { qualityRecords, setVerdict, shipped, startShipped, verifyPrompt } from "./shipped";
@@ -123,8 +123,12 @@ const server = Bun.serve({
     "/api/snapshot": api(() => Response.json(snapshot())),
     "/api/events": api(events),
     "/api/item": api((req) => {
-      const q = new URL(req.url).searchParams.get("q") ?? "";
-      const it = findItem(snapshot().items, q);
+      const params = new URL(req.url).searchParams, q = params.get("q") ?? "";
+      // `focused`: the work item of the agent the user last had focused in herdr.
+      const pane = params.has("focused") ? focusedPane() : null;
+      const it = params.has("focused") ? snapshot().items.find((i) => i.agents.some((a) => a.pane === pane)) ?? null : findItem(snapshot().items, q);
+      if (!it && params.has("focused")) return new Response(pane ? "the focused agent isn't on a work item" : "no agent has had focus yet", { status: 404 });
+      if (params.has("id") && it) return new Response(it.id);
       if (!it) return new Response(`no work item on the board matches ${q}`, { status: 404 });
       return new Response(formatItem(it, it.repos.flatMap((r) => lessonsFor(r)), checksFor(it.prs).map(checkLine)));
     }),
@@ -261,10 +265,10 @@ const server = Bun.serve({
     }),
     "/api/verify/tail": api((req) => { const u = new URL(req.url).searchParams; const t = tail(u.get("id") ?? "", u.get("f") ?? ""); return t === null ? Response.json({ text: "" }) : Response.json({ text: t }); }),
     "/api/verify/start": { POST: api(async (req) => {
-      const b = (await req.json()) as { repo: string; ref: string; key?: string | null; pr?: string | null; item?: string | null; agent?: boolean; cwd?: string | null };
+      const b = (await req.json()) as { repo: string; ref: string; also?: { repo: string; ref: string }[]; key?: string | null; pr?: string | null; item?: string | null; agent?: boolean; cwd?: string | null };
       const { startAgent } = await import("./handoff");
       try {
-        return Response.json(await startRun({ repo: String(b.repo), ref: String(b.ref), key: b.key ?? null, pr: b.pr ?? null, item: b.item ?? null, cwd: b.cwd ?? null,
+        return Response.json(await startRun({ repo: String(b.repo), ref: String(b.ref), also: (b.also ?? []).map((x) => ({ repo: String(x.repo), ref: String(x.ref) })), key: b.key ?? null, pr: b.pr ?? null, item: b.item ?? null, cwd: b.cwd ?? null,
           ...(b.agent ? { agentPrompt: verifyRunPrompt, start: (_id: string, prompt: string) => startAgent({ item: b.item ?? String(b.key), repo: String(b.repo), pr: b.pr ?? null, kind: "custom", edited: false, bare: true, verb: "verify", prompt }) } : {}) }));
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 502 }); }
     }) },

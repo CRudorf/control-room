@@ -9,18 +9,18 @@ const built = await Bun.build({ entrypoints: [join(ui, "world", "demo-page.tsx")
 if (!built.success) { for (const l of built.logs) console.error(l); process.exit(1); }
 const js = (await Promise.all(built.outputs.filter((o) => o.kind === "entry-point" || o.path.endsWith(".js")).map((o) => o.text()))).join("\n");
 const bundledCss = (await Promise.all(built.outputs.filter((o) => o.path.endsWith(".css")).map((o) => o.text()))).join("\n");
-const css = [readFileSync(join(ui, "styles.css"), "utf8"), readFileSync(join(ui, "world", "world.css"), "utf8"), skin === "osrs" || skin === "wasteland" ? readFileSync(join(ui, "skins", `${skin}.css`), "utf8") : "", bundledCss].join("\n");
-const fonts = "https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&family=Archivo+Narrow:wght@500;600;700&family=Pixelify+Sans&family=VT323&family=Share+Tech+Mono&display=swap";
+const css = [readFileSync(join(ui, "styles.css"), "utf8"), readFileSync(join(ui, "world", "world.css"), "utf8"), skin === "osrs" || skin === "wasteland" || skin === "farmstead" ? readFileSync(join(ui, "skins", `${skin}.css`), "utf8") : "", bundledCss].join("\n");
+const fonts = "https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&family=Archivo+Narrow:wght@500;600;700&family=Karla:wght@400;600;700;800&family=Francois+One&family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700&family=VT323&family=Share+Tech+Mono&display=swap";
 // Page content only: a host such as a claude.ai artifact wraps it in its own document, and browsers open it as is.
 // The skin is set on the root before the styles apply; the page is one screen, inside the host's safe-area padding.
 const html = `<title>Control Room World</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<script>document.documentElement.setAttribute("data-skin", ${JSON.stringify(skin)});</script>
+${skin === "default" ? "" : `<script>document.documentElement.setAttribute("data-skin", ${JSON.stringify(skin)});</script>`}
 <link rel="stylesheet" href="${fonts}">
 <style>${css}
 :root { color-scheme: dark; }
 html, body { height:100%; overflow:hidden; }
-body { margin:0; background:#1b1d1a; padding-left:max(0px, env(safe-area-inset-left, 0px)); padding-right:max(0px, env(safe-area-inset-right, 0px)); }
+body { margin:0; background:#003322; padding-left:max(0px, env(safe-area-inset-left, 0px)); padding-right:max(0px, env(safe-area-inset-right, 0px)); }
 #root { height:100%; display:grid; grid-template-rows:minmax(0,1fr); }
 /* Recording needs screen capture, which a shared page can't have. */
 .world-opts button[title^="Record"] { display:none; }

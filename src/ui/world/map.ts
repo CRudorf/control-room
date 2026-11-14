@@ -224,6 +224,17 @@ export const BLOCKED: Uint8Array = (() => {
   }
   return g;
 })();
+const BASE = BLOCKED.slice();
+/** Walls a world kit builds that the town doesn't have, as [x, z, w, d]: the grid becomes the town's plus these.
+ *  Called with none, it's the town's again. */
+export function extraWalls(rects: [number, number, number, number][]) {
+  BLOCKED.set(BASE);
+  if (!rects.length) return;
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const cx = i * CELL, cz = Z0 + j * CELL;
+    if (rects.some(([x, z, w, d]) => overlaps(cx, cz, x, z, w, d))) BLOCKED[j * GW + i] = 1;
+  }
+}
 const cellOf = (x: number, z: number): [number, number] => [Math.max(0, Math.min(GW - 1, Math.floor(x / CELL))), Math.max(0, Math.min(GH - 1, Math.floor((z - Z0) / CELL)))];
 const free = (i: number, j: number) => i >= 0 && j >= 0 && i < GW && j < GH && !BLOCKED[j * GW + i];
 export const walkable = (x: number, z: number) => { const [i, j] = cellOf(x, z); return free(i, j); };

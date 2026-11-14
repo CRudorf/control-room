@@ -26,6 +26,8 @@
 
 **Routine**: A prompt the control room starts on its own in each of its repos, daily or weekly: at a set time, or when the user starts work (the first time that day they're at the machine). With no prompt it runs `/signal-to-pr` bare, a triage of the repo's live errors. Set on the Routines page. It starts on the first ready Machine, else on this Mac, unless it is set to this Mac only.
 
+**Unattended agent**: An agent the control room starts with nobody watching it: a Routine, or a review-loop agent fixing feedback or CI. Held to a narrower standard than an agent the user starts and watches, because nobody is there to catch a bad step.
+
 **Machine**: Another computer that runs agents, set on the Settings page: its own herdr, reached over ssh, with its own clones. Its agents show on the board tagged with its name. It is ready for a repo when it is reachable, has the clone, and Claude there trusts the folder. Avoid: remote, box (that's one machine's name).
 
 **Friction review**: The routine every control room starts with, weekly on Friday when the user starts work. Its agent reads every session tied to a work item, with how each item moved on the board, and reports candidates that would take friction out of a work item's workflow, one card each the way an architecture review does. It changes nothing; the user picks one to explore. Avoid: retro.
@@ -76,7 +78,7 @@
 
 **Branch**: A work item's branches are the remote branches whose names carry its key. A project's tuning can name its branch convention. The board looks for them in each clone of this project, and shows how far each one has reached in the project's delivery flow. A work item with a branch and no PR never says "no PR yet".
 
-**Verification run**: One commit of a repo running locally on a free port with seeded data, tested in a browser against its issue and mockups. Its folder keeps the evidence and every log. A check counts as passed only when the user confirms it. A newer commit makes the run out of date.
+**Verification run**: One commit of each repo in a change (a round), running locally on a free port or on a dev machine, with seeded data, tested in a browser against its issue and mockups. Its folder keeps the evidence and every log. A check counts as passed only when the user confirms it. A newer commit makes the run out of date; the next round starts from its scripts, data and checks.
 
 **Cleanup**: Removing what work left behind. The control room reaps what it owns: dead verification worktrees and chart folders with no result. A self-review session closes once its PR's own session has taken its findings: the tell is in that session's transcript with a reply after it. Other worktrees go only when the user asks, and only when no process is in them, they have no uncommitted files, each commit is on a remote, and they were quiet for a day.
 

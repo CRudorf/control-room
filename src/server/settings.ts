@@ -63,6 +63,7 @@ export const KNOBS: Knob[] = [
   { section: "agents", key: "lowMemoryPct", label: "Low memory", help: "Below this much free memory, the review loop starts no new agent.", unit: "% free", def: 15, min: 0, max: 50 },
   { section: "agents", key: "guides", label: "Field guides at once", help: "Field guide sessions for review requests running at the same time.", unit: "sessions", def: 2, min: 0, max: 10 },
   { section: "agents", key: "replays", label: "Replays per press", help: "Replays one press starts. The rest wait for the next press.", unit: "replays", def: 2, min: 1, max: 10 },
+  { section: "schedule", key: "scheduled", label: "Scheduled agents", help: "1 runs Routines, the Monday architecture pass and the weekly loop on their schedule; 0 pauses all three. Their run buttons still work.", unit: "on", def: 1, min: 0, max: 1 },
   { section: "schedule", key: "workFrom", label: "Work starts after", help: "Routines that run when you start work wait for you at the Mac after this hour.", unit: ":00", def: 5, min: 0, max: 23 },
   { section: "schedule", key: "loopFrom", label: "Weekly loop from", help: "The weekly loop starts on the first weekday check at or after this hour.", unit: ":00", def: 9, min: 0, max: 23 },
   { section: "schedule", key: "loopUntil", label: "Weekly loop until", help: "No weekly loop starts at or after this hour; it waits for the next weekday.", unit: ":00", def: 12, min: 1, max: 24 },
@@ -92,6 +93,8 @@ export const tuning = {
   lowMemoryPct: () => knob("agents", "lowMemoryPct"),
   guides: () => knob("agents", "guides"),
   replays: () => knob("agents", "replays"),
+  /** Whether Routines, the architecture pass and the weekly loop start on their own. */
+  scheduled: () => knob("schedule", "scheduled") !== 0,
   workFrom: () => knob("schedule", "workFrom"),
   loopFrom: () => knob("schedule", "loopFrom"),
   loopUntil: () => knob("schedule", "loopUntil"),

@@ -131,6 +131,7 @@ async function startRun(r: Routine, trigger: string) {
 export function startRoutines() {
   if (DEV) return;
   const check = () => {
+    if (!tuning.scheduled()) return;
     const due = routines().filter((r) => isDue(r, new Date(), routineRuns()[r.id], r.when === "start" && (idleSeconds() ?? Infinity) < ACTIVE_S));
     for (const r of due) void runRoutine(r.id, "schedule").catch((e) => console.error(new Date().toISOString(), `routine ${r.id} failed:`, (e as Error).message));
   };

@@ -33,8 +33,8 @@ const MIGRATION = /(^|\/)(migrations?|db\/migrate)\/|\.sql$|schema\.(prisma|rb|g
 const INFRA = /\.tf$|terraform|helm|k8s|kubernetes|(^|\/)Dockerfile|\.github\/workflows\//i;
 const SENSITIVE: [RegExp, string][] = [
   [MIGRATION, "the database schema"],
-  [/auth|permission|oauth|session|password|token/i, "auth"],
-  [/payment|billing|invoice|stripe/i, "payments"],
+  [/auth|permission|keycloak|oauth|session|password|token/i, "auth"],
+  [/payment|billing|invoice|stripe|claim/i, "payments or claims"],
   [INFRA, "infrastructure or CI"],
   [/(^|\/)(config|settings)\/|\.env|application\.(ya?ml|properties)$|feature.?flags?/i, "configuration"],
 ];

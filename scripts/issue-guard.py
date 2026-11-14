@@ -37,6 +37,46 @@ def words():
     return out
 
 
+def project_map():
+    try:
+        with open(os.path.join(CONFIG, "projects.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def target(text, tool, cwd):
+    """The owner/name an issue write goes to: -R, a repos/ path, an MCP tool's owner and repo, else this clone's origin."""
+    m = re.search(r"(?:\s-R\s+|--repo[\s=]+)(?:https?://github\.com/)?([\w.-]+)/([\w.-]+)", text) or re.search(r"repos/([\w.-]+)/([\w.-]+)", text)
+    if m:
+        return m.group(1), m.group(2)
+    if tool.get("owner") and tool.get("repo"):
+        return str(tool["owner"]), str(tool["repo"])
+    m = re.search(r"[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?\s*$", origin(cwd))
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
+def project_of(m, owner, name):
+    if not owner:
+        return None
+    return {k.lower(): p for k, p in (m.get("repos") or {}).items()}.get((name or "").lower()) \
+        or {k.lower(): p for k, p in (m.get("owners") or {}).items()}.get(owner.lower())
+
+
+def private_target(target_repo, cwd):
+    """
+    True when the write goes to a repo of a project other than the public one, from outside the public
+    project: those issues aren't public. A session in the public project still can't write there.
+    """
+    m = project_map()
+    public = (m.get("public") or {}).get("project")
+    project = project_of(m, *target_repo)
+    if not public or not project or project == public:
+        return False
+    here = re.search(r"[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?\s*$", origin(cwd))
+    return not (here and project_of(m, here.group(1), here.group(2)) == public)
+
+
 def body_files(cmd):
     try:
         parts = shlex.split(cmd)
@@ -77,6 +117,8 @@ def main():
     elif name.startswith("mcp__") and re.search(r"issue", name, re.I):
         text = json.dumps(tool)
     else:
+        sys.exit(0)
+    if private_target(target(text, tool, cwd), cwd):
         sys.exit(0)
     list_ = words()
     if not list_:

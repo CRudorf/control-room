@@ -45,18 +45,18 @@ test("a new conflict gets an agent once per head, not while one is working or th
 });
 
 test("default reviewers are learned from people re-requested at least twice in a repo", () => {
-  const m = learned(["o/gizmo#1 → dev-sam, dev-lee", "o/gizmo#2 → dev-sam", "o/gizmo#3 → dev-lee, dev-kim", "o/other#4 → dev-ann"]);
-  expect(m.get("gizmo")).toEqual(["dev-sam", "dev-lee"]);
+  const m = learned(["o/gizmo#1 → hb-sam, hb-lee", "o/gizmo#2 → hb-sam", "o/gizmo#3 → hb-lee, hb-kim", "o/other#4 → hb-ann"]);
+  expect(m.get("gizmo")).toEqual(["hb-sam", "hb-lee"]);
   expect(m.get("other")).toEqual([]);
 });
 
 test("a ready PR with nobody on it asks for the default reviewers; a re-request adds them", () => {
-  const ready = withReviewers(pr(), ["dev-sam", "me"]);
+  const ready = withReviewers(pr(), ["hb-sam", "me"]);
   expect(ready.state).toBe("re-request");
-  expect(ready.rerequest).toEqual(["dev-sam"]);
-  expect(withReviewers(pr({ state: "re-request", rerequest: ["bot"] }), ["dev-sam"]).rerequest).toEqual(["bot", "dev-sam"]);
-  expect(withReviewers(pr({ draft: true }), ["dev-sam"]).state).toBe("waiting");
-  expect(withReviewers(pr({ pending_reviewers: ["dev-lee"] }), ["dev-sam"]).state).toBe("waiting");
+  expect(ready.rerequest).toEqual(["hb-sam"]);
+  expect(withReviewers(pr({ state: "re-request", rerequest: ["bot"] }), ["hb-sam"]).rerequest).toEqual(["bot", "hb-sam"]);
+  expect(withReviewers(pr({ draft: true }), ["hb-sam"]).state).toBe("waiting");
+  expect(withReviewers(pr({ pending_reviewers: ["hb-lee"] }), ["hb-sam"]).state).toBe("waiting");
 });
 
 test("drafts waiting to go out are their own Next step, before checking agents' work", () => {

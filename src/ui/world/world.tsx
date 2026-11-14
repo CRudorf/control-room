@@ -12,7 +12,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { WorkItem } from "../../shared/types";
 import { AREA_STEP, type Giver, givers as giversOf, type Mode, place, type Townsfolk, townsfolk, VERB } from "./agents";
-import { AREAS, BOARD, BONFIRE, BUILDINGS, type Building, CX, CZ, doorOf, findPath, H, heightAt, rnd, signOf, slotAt, type Skill, type Spot, W, WILD_Z, Z0 } from "./map";
+import { AREAS, BOARD, BONFIRE, BUILDINGS, type Building, CX, CZ, doorOf, extraWalls, findPath, H, heightAt, rnd, signOf, slotAt, type Skill, type Spot, W, WILD_Z, Z0 } from "./map";
 import { type Bit, burst, smoke, sparkle, MM, mmz, type Person } from "./scene";
 import { named, TOWN, type WorldKit } from "./kit";
 import { useRecorder } from "./record";
@@ -51,7 +51,9 @@ function short(path: [number, number][], from: [number, number], by: number): [n
 
 /** Built-in skins' own kits, loaded when their World opens. */
 const WORLDS: Partial<Record<string, () => Promise<WorldKit>>> = {
+  default: () => import("./office").then((m) => m.OFFICE),
   wasteland: () => import("./wasteland").then((m) => m.loadWasteland()),
+  farmstead: () => import("./farm").then((m) => m.FARM),
 };
 
 /** The World in the kit of the skin that's on: the town, a built-in skin's own, or one a skin brings through extra.ts. */
@@ -161,6 +163,7 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
     if (look.shadows) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
     if (look.exposure) { renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = look.exposure; }
     host.prepend(renderer.domElement);
+    extraWalls(kit.walls ?? []);
     const { scene, ground, roofs, walls } = kit.buildTown();
     const MAP = kit.minimapImage();
     const bits: Bit[] = [];
@@ -286,8 +289,14 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
       }
     };
 
-    // Camera: yaw and pitch round you, turned with the arrow keys or middle-drag, zoomed with the wheel.
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+    // Camera: yaw and pitch round you, turned with the arrow keys or middle-drag, zoomed with the wheel. Overhead, it
+    // looks down from the south at 45 degrees without perspective or turning, and the wheel steps the zoom.
+    const overhead = look.view === "overhead", ppu = look.ppu ?? 10;
+    const camera: THREE.PerspectiveCamera | THREE.OrthographicCamera = overhead ? new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 400) : new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+    let zoom = 4, wheelAcc = 0;
+    // Overhead, people stand on the same whole screen pixels as the camera, so walking doesn't wobble against the ground.
+    const grid = (v: number) => Math.round(v * ppu * zoom) / (ppu * zoom);
+    const onPixels = (o: THREE.Object3D) => { if (overhead) o.position.set(grid(o.position.x), grid(o.position.y), grid(o.position.z)); };
     // A kit that asks for it: light from a studio's surroundings, then the frame drawn through passes that shade
     // creases (ambient occlusion), let bright lights glow (bloom) and tone map at the end.
     if (look.environment) {
@@ -302,21 +311,35 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
       if (look.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), look.bloom, 0.5, 0.9));
       composer.addPass(new OutputPass());
     }
-    const cam = { yaw: 0.6, pitch: 0.82, dist: 17 };
+    const cam = { yaw: overhead ? 0 : 0.6, pitch: 0.82, dist: 17 };
     const keys = new Set<string>();
     const kd = (e: KeyboardEvent) => { if (e.key.startsWith("Arrow") && document.activeElement !== chatIn.current) { keys.add(e.key); e.preventDefault(); } };
     const ku = (e: KeyboardEvent) => keys.delete(e.key);
     window.addEventListener("keydown", kd); window.addEventListener("keyup", ku);
-    const wheel = (e: WheelEvent) => { e.preventDefault(); cam.dist = Math.max(8, Math.min(28, cam.dist + e.deltaY * 0.02)); };
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (!overhead) { cam.dist = Math.max(8, Math.min(28, cam.dist + e.deltaY * 0.02)); return; }
+      wheelAcc += e.deltaY;
+      if (Math.abs(wheelAcc) > 80) { zoom = Math.max(2, Math.min(7, zoom - Math.sign(wheelAcc))); wheelAcc = 0; size(); }
+    };
     host.addEventListener("wheel", wheel, { passive: false });
     let drag: { x: number; y: number } | null = null;
-    const pd = (e: PointerEvent) => { if (e.button === 1) { drag = { x: e.clientX, y: e.clientY }; e.preventDefault(); } };
+    const pd = (e: PointerEvent) => { if (e.button === 1 && !overhead) { drag = { x: e.clientX, y: e.clientY }; e.preventDefault(); } };
     const pm = (e: PointerEvent) => { if (!drag) return; cam.yaw -= (e.clientX - drag.x) * 0.008; cam.pitch = Math.max(0.45, Math.min(1.35, cam.pitch + (e.clientY - drag.y) * 0.006)); drag = { x: e.clientX, y: e.clientY }; };
     const pu = () => { drag = null; };
     host.addEventListener("pointerdown", pd); window.addEventListener("pointermove", pm); window.addEventListener("pointerup", pu);
     // Rendered small and scaled up, for the client's chunky pixels, unless the kit draws sharp.
     const size = () => {
       const w = host.clientWidth, h = host.clientHeight, s = look.sharp ? 1 : Math.min(1, 760 / Math.max(1, w));
+      if (camera instanceof THREE.OrthographicCamera) {
+        // Overhead: drawn at the screen's size, `ppu` art pixels a unit, each `zoom` screen pixels square, so the art
+        // stays blocky while the view scrolls a screen pixel at a time. The frustum is shorter by root 2 for the tilt.
+        const k = ppu * zoom;
+        renderer.setPixelRatio(1); renderer.setSize(Math.max(1, w), Math.max(1, h), false);
+        camera.left = -w / 2 / k; camera.right = w / 2 / k; camera.top = h / 2 / k / Math.SQRT2; camera.bottom = -camera.top;
+        camera.updateProjectionMatrix();
+        return;
+      }
       // Post passes cost per pixel, so a composed frame stops short of a retina screen's full density.
       const pr = look.sharp ? Math.min(composer ? 1 : 2, window.devicePixelRatio || 1) : 1;
       renderer.setPixelRatio(pr); renderer.setSize(Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)), false);
@@ -353,10 +376,12 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
     const v = new THREE.Vector3();
     const frame = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      if (keys.has("ArrowLeft")) cam.yaw -= dt * 1.8;
-      if (keys.has("ArrowRight")) cam.yaw += dt * 1.8;
-      if (keys.has("ArrowUp")) cam.pitch = Math.min(1.35, cam.pitch + dt * 1.2);
-      if (keys.has("ArrowDown")) cam.pitch = Math.max(0.45, cam.pitch - dt * 1.2);
+      if (!overhead) {
+        if (keys.has("ArrowLeft")) cam.yaw -= dt * 1.8;
+        if (keys.has("ArrowRight")) cam.yaw += dt * 1.8;
+        if (keys.has("ArrowUp")) cam.pitch = Math.min(1.35, cam.pitch + dt * 1.2);
+        if (keys.has("ArrowDown")) cam.pitch = Math.max(0.45, cam.pitch - dt * 1.2);
+      }
       syncNpcs(); syncAgents();
       const ts = now / 1000, opt = optsRef.current;
       for (const r of roofs) r.visible = !opt.hideRoofs;
@@ -448,7 +473,7 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
         f.p.act?.(cheering ? "cheer" : f.path.length ? "walk" : f.mode === "drink" ? "sit" : f.mode === "fight" ? (f.role === "attack" ? "attack" : "block")
           : f.mode === "burn" ? "kneel" : f.mode === "pray" ? "sit" : f.mode === "ask" ? "wave" : f.skill ?? "idle", dt);
         const fy = heightAt(f.x, f.z);
-        f.p.g.position.set(f.x, fy - (f.mode === "pray" && !f.path.length && !f.p.act ? 0.3 : 0), f.z); f.p.g.rotation.x = 0;
+        f.p.g.position.set(f.x, fy - (f.mode === "pray" && !f.path.length && !f.p.act ? 0.3 : 0), f.z); onPixels(f.p.g); f.p.g.rotation.x = 0;
         // A fighter's health bar sits over its head, its name and plates above that.
         const fighting = f.mode === "fight", base = fy + (fighting ? 1.9 : 1.72), lift = opt.names ? 0.32 : 0, task = opt.overlays ? 0.42 : 0;
         if (fighting) bar(pane, f.hp, f.x, fy + 1.72, f.z); else if (bars.has(pane)) dropBar(pane);
@@ -474,7 +499,7 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
         if (d <= step) { pos.x = tx; pos.z = tz; pos.path.shift(); if (!pos.path.length) { const t = pos.then; pos.then = null; t?.(); } }
         else { pos.x += (dx / d) * step; pos.z += (dz / d) * step; }
       }
-      me.g.position.set(pos.x, heightAt(pos.x, pos.z), pos.z); me.g.rotation.y = pos.face;
+      me.g.position.set(pos.x, heightAt(pos.x, pos.z), pos.z); onPixels(me.g); me.g.rotation.y = pos.face;
       const sw = moving ? Math.sin(now / 90) * 0.7 : 0;
       me.legL.rotation.x = sw; me.legR.rotation.x = -sw; me.armL.rotation.x = -sw * 0.8; me.armR.rotation.x = sw * 0.8;
       me.act?.(moving ? "run" : "idle", dt);
@@ -494,23 +519,30 @@ function WorldView({ items, onOpen, onBuilding, onPrimary, onSheet, onClose, kit
       const hg = hoverRef.current?.startsWith("giver:") ? giversRef.current.find((g) => `giver:${g.id}` === hoverRef.current && g.slot !== null) : null;
       if (hg) { const [sx, sy, sz] = slotAt(hg.slot!); tag("scroll", "task open", [{ t: hg.key, c: "h" }, { t: hg.why }], sx, sy - 0.6, sz); } else untag("scroll");
 
-      const head = new THREE.Vector3(pos.x, heightAt(pos.x, pos.z) + 0.9, pos.z);
-      camera.position.set(head.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, head.y + Math.sin(cam.pitch) * cam.dist, head.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist);
-      camera.lookAt(head);
-      (scene.fog as THREE.Fog).near = cam.dist * 1.05; (scene.fog as THREE.Fog).far = cam.dist * 2.1;
-      // Walls between the camera and you fade, so you're never lost behind a building.
-      ray.set(camera.position, head.clone().sub(camera.position).normalize()); ray.far = camera.position.distanceTo(head) - 0.3;
-      const hit = new Set(ray.intersectObjects(walls, false).map((h) => h.object as THREE.Mesh));
-      ray.far = Infinity;
-      for (const m of faded) if (!hit.has(m)) { Object.assign(m.material, { transparent: false, opacity: 1 }); faded.delete(m); }
-      for (const m of hit) if (!faded.has(m)) { Object.assign(m.material, { transparent: true, opacity: 0.25 }); faded.add(m); }
+      if (overhead) {
+        // Over you from the south, on whole pixels so the art doesn't shimmer as you walk.
+        const sx = grid(pos.x), sz = grid(pos.z);
+        camera.position.set(sx, 100, sz + 100); camera.lookAt(sx, 0, sz);
+      } else {
+        const head = new THREE.Vector3(pos.x, heightAt(pos.x, pos.z) + 0.9, pos.z);
+        camera.position.set(head.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, head.y + Math.sin(cam.pitch) * cam.dist, head.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist);
+        camera.lookAt(head);
+        if (scene.fog) { (scene.fog as THREE.Fog).near = cam.dist * 1.05; (scene.fog as THREE.Fog).far = cam.dist * 2.1; }
+        // Walls between the camera and you fade, so you're never lost behind a building.
+        ray.set(camera.position, head.clone().sub(camera.position).normalize()); ray.far = camera.position.distanceTo(head) - 0.3;
+        const hit = new Set(ray.intersectObjects(walls, false).map((h) => h.object as THREE.Mesh));
+        ray.far = Infinity;
+        for (const m of faded) if (!hit.has(m)) { Object.assign(m.material, { transparent: false, opacity: 1 }); faded.delete(m); }
+        for (const m of hit) if (!faded.has(m)) { Object.assign(m.material, { transparent: true, opacity: 0.25 }); faded.add(m); }
+      }
       if (composer) composer.render(); else renderer.render(scene, camera);
 
       const vw = host.clientWidth, vh = host.clientHeight;
       for (const [, t] of tags) {
         const on = t.kind === "name" ? opt.names : t.kind === "area" || t.kind.startsWith("task") ? opt.overlays : true;
         v.copy(t.at).project(camera);
-        if (!on || v.z > 1 || camera.position.distanceTo(t.at) > cam.dist * 1.9) { t.el.style.display = "none"; continue; }
+        const far = overhead ? Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2 : camera.position.distanceTo(t.at) > cam.dist * 1.9;
+        if (!on || v.z > 1 || far) { t.el.style.display = "none"; continue; }
         t.el.style.display = ""; t.el.style.transform = `translate(${((v.x + 1) / 2) * vw}px, ${((1 - v.y) / 2) * vh}px) translate(-50%, -100%)`;
       }
       const place2d = (el: HTMLElement, at: THREE.Vector3) => {

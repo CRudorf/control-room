@@ -278,6 +278,25 @@ export function quietAgentsByKey(agents: Agent[], ctx: AgentCtx = {}): Map<strin
   return by;
 }
 
+/**
+ * An open session whose tab names an issue keeps a row in Waiting on others while it sits idle, when nothing
+ * else puts that issue on the board: the issue is someone else's, or the tracker doesn't know it. The user's
+ * own issues decide their own rows (applyJira), and a done issue's session goes. The row keeps the id it had
+ * while the agent worked, so its notes and parks carry over. Only a tab that names the issue itself counts:
+ * a tab that names a PR ("feedback repo#12") belongs with that PR, and leaves with it.
+ */
+export function applyIdleAgents(items: WorkItem[], quiet: Map<string, Agent[]>, issues: Map<string, Issue>, projects = new Set(KNOWN_PROJECTS)): WorkItem[] {
+  const onBoard = new Set(items.map((it) => it.key));
+  const added = [...quiet].flatMap(([key, all]): WorkItem[] => {
+    const j = issues.get(key);
+    const agents = all.filter((a) => trackerKey(`${a.label} ${a.name ?? ""}`, projects) === key);
+    if (!agents.length || onBoard.has(key) || j?.mine || j?.category === "done") return [];
+    const it = itemFrom(`a-${slug(key)}`, key, j ? "jira" : "agent", [], agents, undefined, new Set(), new Map());
+    return [j ? { ...it, title: j.summary, jira: { status: j.status, url: j.url, summary: j.summary, suggest: null, parent: j.parent ?? null } } : it];
+  });
+  return [...items, ...added];
+}
+
 export function groupWorkItems(rows: PrRow[], agents: Agent[] = [], holds: Map<string, Hold> = new Map(), reran: Set<string> = new Set(), drafts: Map<string, number> = new Map(), moves: Map<string, Move> = new Map(), blocked: Set<string> = new Set(), agentCtx: AgentCtx = {}): WorkItem[] {
   const mine = rows.filter((r) => r.role === "mine");
   const requested = rows.filter((r) => r.role === "requested");

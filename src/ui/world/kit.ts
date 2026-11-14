@@ -44,8 +44,12 @@ export type WorldKit = {
    *  at the screen's full resolution, smoothed; `shadows` lets the kit's lights cast them; `exposure` turns on filmic
    *  tone mapping at that brightness; `environment` lights everything from a studio's surroundings too, so metal and
    *  glass reflect, at that strength; `ao` darkens creases and contact with ambient occlusion; `bloom` lets bright
-   *  lights glow, at that strength. */
-  render?: { sharp?: boolean; shadows?: boolean; exposure?: number; environment?: number; ao?: boolean; bloom?: number };
+   *  lights glow, at that strength. `view: "overhead"` looks down from the south at 45 degrees with no perspective and
+   *  no turning, like a top-down pixel game: one unit up shows as one unit north, and the frame is drawn at `ppu`
+   *  pixels a unit, scaled up a whole number of times, so the kit's pixel art stays crisp. The wheel zooms by steps. */
+  render?: { sharp?: boolean; shadows?: boolean; exposure?: number; environment?: number; ao?: boolean; bloom?: number; view?: "overhead"; ppu?: number };
+  /** Walls the kit builds that the town doesn't have, as [x, z, w, d], so people walk round them. */
+  walls?: [number, number, number, number][];
 };
 
 export const TOWN: WorldKit = {

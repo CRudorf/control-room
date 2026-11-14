@@ -21,7 +21,7 @@ import { statSync } from "node:fs";
 import { announce } from "./notifier";
 import { dismissRun, runs } from "./runs";
 import { pickedNow } from "./suggestions";
-import { quietAgentsByKey, slug, applyGates, applyJira, applyPicked, approvedShipped, applyCommentWaits, applyParks, applyRuns, runMovedOn, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
+import { quietAgentsByKey, slug, applyGates, applyIdleAgents, applyJira, applyPicked, approvedShipped, applyCommentWaits, applyParks, applyRuns, runMovedOn, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
 import { jiraError, jiraIssues, startJira, transition } from "./jira";
 import { noteSessions, startUsage, usageFor } from "./usage";
 import { machine, type Machine } from "./health";
@@ -48,6 +48,7 @@ import { findStacks, withStack } from "./stacks";
 import { branchesFor, startBranches } from "./branches";
 import { prFacts } from "./history";
 import { recordBounces } from "./product";
+import { reportPanes, writeHerdrFiles } from "./panemeta";
 import type { FinishedItem, Issue, ItemBranch, Run, WorkItem } from "../shared/types";
 import { parkState, type RulePark } from "./parkrules";
 
@@ -362,7 +363,7 @@ export function snapshot(): Snapshot {
   const waits = commentWaits();
   const openWaits = Object.fromEntries(Object.entries(waits).filter(([k]) => issues.get(k)?.category !== "done"));
   if (Object.keys(openWaits).length !== Object.keys(waits).length) save("comment_waits", openWaits);
-  const waited = applyCommentWaits(applyLoop(blocked, views(blocked, loopsNow())), openWaits, issues, { branchesFor, quietAgents: (k) => quiet.get(k) ?? [] });
+  const waited = applyIdleAgents(applyCommentWaits(applyLoop(blocked, views(blocked, loopsNow())), openWaits, issues, { branchesFor, quietAgents: (k) => quiet.get(k) ?? [] }), quiet, issues);
   const items = sortItems(rankNext(applyGuides(applyParks(waited, parks()))))
     .map((it) => {
       const u = usageFor(it), a = artifactsFor(it), c = checksFor(it.prs);
@@ -434,10 +435,13 @@ export function publish() {
     // So has a lifted dependency.
     for (const it of s.items) for (const g of it.dependencies ?? []) if (g.opened) db.query("DELETE FROM dependencies WHERE ref = ?").run(g.ref);
   }
+  // The dev server leaves herdr's panes and the status files to the installed one.
+  if (!DEV && h.up) void reportPanes(s.items);
   const body = JSON.stringify([s.items, s.nudges, s.finished, s.error, s.herdr, s.machine?.low]);
   save("feed", { user, rows: [...rows.values()], fps, polledAt, reconciledAt } satisfies Saved);
   if (body === last) return;
   last = body;
+  if (!DEV) writeHerdrFiles(s.items);
   for (const fn of listeners) fn(s);
 }
 

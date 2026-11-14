@@ -7,7 +7,7 @@ import { post, toast } from "./actions";
 import { LiveConsole } from "./console";
 
 type Check = { id: string; title: string; source?: string; criterion?: string; surface?: string; status: string; note?: string; evidence?: string[] };
-type Run = { id: string; key: string | null; pr: string | null; repo: string; commit: string; state: string; step: string | null; error: string | null; url: string | null; agent: string | null; startedAt: string;
+type Run = { id: string; key: string | null; pr: string | null; repo: string; commit: string; state: string; step: string | null; error: string | null; url: string | null; agent: string | null; startedAt: string; commits?: Record<string, string>;
   login: { user: string; password: string } | null; logins?: { label: string; user: string; password: string }[]; checks: Check[]; confirms: Record<string, { verdict: string; note?: string }>; files: string[]; logEmails?: { logger: string; message: string; count: number }[]; session: { pane: string; status: string } | null; stages: { name: string; state: string }[]; filesSince?: number | null };
 
 const fileUrl = (id: string, f: string) => `/api/verify/file?id=${encodeURIComponent(id)}&f=${encodeURIComponent(f)}`;
@@ -144,7 +144,7 @@ function RunView({ runs, item, onClose }: { runs: Run[]; item: string; onClose: 
       <div className="vv-head">
         <b className="vt">{r ? `${r.key ?? r.repo} verification` : "Loading…"}</b>
         <div className="seg">{runs.map((x, i) => <button key={x.id} className={x.id === id ? "on" : ""} title={`${x.commit.slice(0, 7)} · ${new Date(x.startedAt).toLocaleString()} · ${label(x)}`} onClick={() => setId(x.id)}>Round {runs.length - i}</button>)}</div>
-        {r && <span className="st dim">{r.commit.slice(0, 7)} · {r.state}{r.step ? ` · ${r.step}` : ""}{stale(runs.find((x) => x.id === id)!) ? " · the PR changed since this round" : ""}{r.agent ? ` · ${r.agent}` : ""}</span>}
+        {r && <span className="st dim">{r.commit.slice(0, 7)}{Object.entries(r.commits ?? {}).filter(([k]) => k !== r.repo).map(([k, v]) => ` · ${k} ${v.slice(0, 7)}`).join("")} · {r.state}{r.step ? ` · ${r.step}` : ""}{stale(runs.find((x) => x.id === id)!) ? " · the PR changed since this round" : ""}{r.agent ? ` · ${r.agent}` : ""}</span>}
         <div className="row-acts">
           {r?.files.includes("transcript.txt") && <a className="btn" href={fileUrl(id, "transcript.txt")} target="_blank" rel="noreferrer">Transcript</a>}
           {r?.url && r.state === "running" && <a className="btn" href={r.url} target="_blank" rel="noreferrer">Open app</a>}

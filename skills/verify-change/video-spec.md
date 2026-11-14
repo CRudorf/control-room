@@ -63,8 +63,13 @@ Each frame shows the PR, the ticket, the short commit hash and the test conditio
 3. Compare each result on the results scene with `results.json`.
 4. Save the video and its source in the visual store: `<state>/visuals/video-<key>-<short commit>/`, with `state` from `verify.py where`. Put the source in a `source` subfolder. Write `meta.json` with `kind` set to `"video"`, the key, the PR, `rulesHold` set to `null`, and the video in `files`. Put the run id in `reason`.
 
-## Automation
+## Build it with the kit
 
-- Find the way to fill a template from `results.json`. The first example was hand-written. If HyperFrames variables cannot fill it, generate the scene files from `results.json`.
-- Split the scenes into sub-compositions. The example is one file, and `hyperframes check` warns about its structure.
-- A toggle in the Start box, off by default, starts the video through `/signal-to-pr ... video`.
+The `video-kit/` folder next to this spec generates the video from the run folder. Each scene is a sub-composition.
+
+1. Make the HyperFrames project in its final place from the start: `<state>/visuals/video-<key>-<short commit>/source/`. Do not build it in the scratchpad, which is lost when a session ends. Copy `video-kit/lib.mjs` into it, and copy `video-kit/scenes.example.mjs` as `scenes.mjs`.
+2. Write a clips file: one line for each recording, `<name> <item id> <start|auto> <slow> <scene length>`. Then run `bash video-kit/prep-media.sh <run dir> <clips file> <shot names...>`. The script trims the login and the blank page loads, slows the footage and holds the last frame. Do the trimming here, not with `data-media-start` or `data-playback-rate`, because those did not render reliably on the run's webm footage.
+3. Write each scene in `scenes.mjs` from the run's files. Then run `node scenes.mjs`.
+4. Find scenes worth a closer look with `bash video-kit/frames.sh <video> <out.png> <seconds...>`. This makes a contact sheet at 640px per frame.
+
+A toggle in the Start box, off by default, starts the video through `/signal-to-pr ... video`.

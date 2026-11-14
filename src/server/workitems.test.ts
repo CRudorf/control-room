@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { Agent, Dependency, Issue, PrRow } from "../shared/types";
-import { applyCommentWaits, applyGates, applyJira, applyRuns, runMovedOn, branchFamily, cleanTitle, finishedToday, groupWorkItems, quietAgentsByKey, trackerKey, rankNext, errorKey, shutGates, sortItems, suggestFinished, suggestFor } from "./workitems";
+import type { Agent, Dependency, Issue, PrRow, WorkItem } from "../shared/types";
+import { applyCommentWaits, applyGates, applyIdleAgents, applyJira, applyRuns, runMovedOn, branchFamily, cleanTitle, finishedToday, groupWorkItems, quietAgentsByKey, trackerKey, rankNext, errorKey, shutGates, sortItems, suggestFinished, suggestFor } from "./workitems";
 import { featureOf } from "./metrics";
 
 let n = 100;
@@ -415,6 +415,26 @@ describe("idle agents on an issue with no PR", () => {
   test("an idle agent alone adds no row", () => expect(groupWorkItems([], [agent()])).toEqual([]));
   test("a finished agent is not quiet", () => expect(quietAgentsByKey([agent({ finishedSeq: 3, label: "agent widgets#9" })], { keyOfRef: () => "ABC-9" }).size).toBe(0));
   test("a moved agent is not quiet", () => expect(quietAgentsByKey([agent()], { agentMoves: new Map([["cr-x", null]]) }).size).toBe(0));
+
+  // A session on someone else's issue stays findable between prompts.
+  const theirs: Issue = { ...issue, mine: false };
+  const idle = new Map([["ABC-9", [agent()]]]);
+  const run = (items: WorkItem[], j?: Issue, quiet = idle) => applyIdleAgents(items, quiet, new Map(j ? [["ABC-9", j]] : []), new Set(["ABC"]));
+  test("an idle agent on an issue that isn't the user's keeps its row in Waiting", () => {
+    const [it] = run([], theirs);
+    expect([it.id, it.key, it.lane, it.why, it.title, it.jira?.status]).toEqual(["a-abc-9", "ABC-9", "waiting", "agent idle", "a thing", "In Progress"]);
+    expect(it.agents.map((a) => a.name)).toEqual(["cr-x"]);
+  });
+  test("an idle agent on an issue the tracker doesn't know keeps its row", () =>
+    expect(run([]).map((it) => [it.key, it.keyKind])).toEqual([["ABC-9", "agent"]]));
+  test("the user's own issue decides its own row", () => expect(run([], issue)).toEqual([]));
+  test("a done issue's idle agent adds no row", () => expect(run([], { ...theirs, category: "done" })).toEqual([]));
+  test("an issue already on the board gets no second row", () => {
+    const on = applyJira([], new Map([["ABC-9", issue]]), { quietAgents: (k) => idle.get(k) ?? [] });
+    expect(run(on, issue).length).toBe(on.length);
+  });
+  test("a tab that names a PR, not the issue, adds no row", () =>
+    expect(run([], theirs, new Map([["ABC-9", [agent({ label: "feedback widgets#9" })]]]))).toEqual([]));
 });
 
 describe("wait for a comment", () => {

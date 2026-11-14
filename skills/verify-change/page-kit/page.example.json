@@ -1,0 +1,19 @@
+{
+ "run": "abc-12-1a2b3c4-example",
+ "title": "ABC-12 Verification",
+ "eyebrow": "ABC-12 · saved filters · round 2",
+ "lede": "A user saves a filter on the Orders page and finds it again after a reload. This round tested it on the run's build with synthetic orders.",
+ "prs": [
+  {"repo": "example-org/shop-web", "number": 101, "what": "The Save filter button and the saved list."},
+  {"repo": "example-org/shop-api", "number": 55, "what": "The saved-filter endpoint."}
+ ],
+ "surfaces": {"orders-desktop": "Desktop", "orders-mobile": "Mobile"},
+ "video": {"file": "../video-ABC-12-1a2b3c4/video.mp4", "caption": "About two minutes, no sound. Real footage from the run."},
+ "sections": [
+  {"h2": "What ran where", "html": "<ul class=\"plain\"><li>shop-web and shop-api at their PR heads, on the run's own database.</li><li>Synthetic data only: 400 orders for three made-up customers.</li></ul>"}
+ ],
+ "figures": {"h2": "Screens from the run", "items": [
+  {"file": "run:save-filter.png", "alt": "Orders page with the Save filter dialog open", "caption": "Saving a filter."}
+ ]},
+ "evidence": ["Video source: <code>video-ABC-12-1a2b3c4</code>."]
+}
