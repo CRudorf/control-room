@@ -10,12 +10,12 @@ map="$HOME/.config/control-room/projects.json"
 dry=0; msg=""
 if [[ "${1:-}" == "--dry-run" ]]; then dry=1; else msg="${1:-}"; [[ -n "$msg" ]] || { echo "usage: publish.sh \"commit message\" | --dry-run"; exit 2; }; fi
 
-read -r target gh_dir git_name git_email < <(python3 -c "
+IFS=$'\t' read -r target gh_dir git_name git_email < <(python3 -c "
 import json,os
 d=json.load(open('$map'));p=d['public']
 # The identity is the public entry's own, else its project's: a project here gets a launchd job of its own.
 c={**d['projects'].get(p.get('project'),{}),**{k:p[k] for k in ('ghConfigDir','gitName','gitEmail') if k in p}}
-print(p['repo'],os.path.expanduser(c['ghConfigDir']),c['gitName'],c['gitEmail'])")
+print(p['repo'],os.path.expanduser(c['ghConfigDir']),c['gitName'],c['gitEmail'],sep='\\t')")
 export GH_CONFIG_DIR="$gh_dir"
 owner="${target%%/*}"
 [[ "$(gh api user --jq .login)" == "$owner" ]] || { echo "gh in $gh_dir is not signed in as $owner"; exit 1; }
