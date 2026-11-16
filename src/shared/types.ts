@@ -152,7 +152,9 @@ export type Routine = {
 };
 export type RoutineRun = { period: string; at: string; trigger: string; error: string | null;
   /** `machine`: where it started, null on this Mac. `fellBack`: why it didn't start on a machine from Settings. */
-  agents: { repo: string; name: string; dryRun: boolean; machine?: string | null; fellBack?: string }[] };
+  agents: { repo: string; name: string; dryRun: boolean; machine?: string | null; fellBack?: string }[];
+  /** The routine's repos that are not in this project, so the run left them out. */
+  skipped?: string[] };
 
 /** A session drawn as a conversation (transcript.ts): the user, the agent, a run of tool calls, or a recap. */
 export type ChatEntry = { id: string; kind: "user" | "agent" | "tools" | "recap"; text: string; at: string | null; tools?: { id: string; line: string; failed?: boolean }[] };
