@@ -1,4 +1,4 @@
-import { projectRepos, tuned } from "./repos";
+import { projectRepos, repoInProject, tuned } from "./repos";
 // Suggestions (GLOSSARY: Suggestion): work the control room proposes to the user before it is a work
 // item. Jira To Do issues come from jira.py suggest on the Jira interval; architecture candidates
 // come from files a weekly agent writes. A model judges each morning whether an issue's links leave
@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Suggestion, SuggestionsView, SuggestSource, Verdict, WorkItem } from "../shared/types";
-import { JIRA, POLL, ROOT, STATE_DIR } from "./config";
+import { JIRA, POLL, STATE_DIR } from "./config";
 import { every } from "./every";
 import { load, save } from "./db";
 import { isDev, note, read, type Ctx } from "./runner";
@@ -270,11 +270,14 @@ export async function pickupSuggestion(key: string, repo: string, deps: { start:
 
 export const archAgentPrompt = (s: Raw) => archPickupPrompt(s);
 
-/** Repos the weekly architecture pass covers: profiled clones under ~/Projects, plus the control room. */
-function archRepos(): string[] {
-  const repos = projectRepos().filter((d) => tuned(d, "signal-to-pr"));
-  return [...new Set([...repos, ROOT.split("/").pop()!])];
-}
+/**
+ * Repos the weekly architecture pass covers: profiled clones of this project, plus the control room when this
+ * project holds it. The control room goes by its repo name: an installed copy runs from a folder named "app". Pure.
+ */
+export const archReposOf = (profiled: string[], holdsControlRoom: boolean): string[] =>
+  [...new Set([...profiled, ...(holdsControlRoom ? ["control-room"] : [])])];
+
+const archRepos = () => archReposOf(projectRepos().filter((d) => tuned(d, "signal-to-pr")), repoInProject("control-room"));
 
 function archPrompt(repo: string) {
   const out = join(ARCH_DIR, `${repo}.json`);

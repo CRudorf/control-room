@@ -4,6 +4,7 @@
 // which triages the repo's live errors into a menu. Each run is once per day or week; a failed start
 // tries again half an hour later. Every control room starts with the weekly friction review (friction.ts).
 // A run starts on the first machine from Settings that's ready (machines.ts), else on this Mac.
+// A run starts only in the repos of this project, and a routine with none of them is not due.
 import { execFileSync } from "node:child_process";
 import { DEV } from "./config";
 import { load, save } from "./db";
@@ -11,6 +12,7 @@ import { DEFAULT_ROUTINES, writeBrief } from "./friction";
 import { startAgent } from "./handoff";
 import { isDev, note } from "./runner";
 import { machines, syncTo, unready } from "./machines";
+import { projectRepos, repoInProject } from "./repos";
 import { tuning } from "./settings";
 import { weekOf } from "../shared/week";
 import type { Routine, RoutineRun } from "../shared/types";
@@ -86,6 +88,17 @@ const running = new Set<string>();
 /** A routine that runs only on this Mac: set so, or one whose brief is this Mac's own sessions. */
 export const onlyHere = (r: Pick<Routine, "runOn" | "brief">) => r.runOn === "local" || r.brief === "sessions";
 
+/**
+ * The repos a run starts in: the routine's repos that are in this project, and the others it skips. The friction
+ * review reads this Mac's sessions, so when none of its repos is in the project it runs in the project's first repo. Pure.
+ */
+export function runRepos(r: Pick<Routine, "repos" | "brief">, inProject: (repo: string) => boolean, own: string[]): { repos: string[]; skipped: string[] } {
+  const repos = r.repos.filter(inProject), skipped = r.repos.filter((x) => !inProject(x));
+  return { repos: !repos.length && r.brief === "sessions" && own.length ? [own[0]] : repos, skipped };
+}
+
+const reposHere = (r: Routine) => runRepos(r, (x) => repoInProject(x), projectRepos());
+
 /** Starts a routine's agent in each of its repos and records the run. */
 export async function runRoutine(id: string, trigger: "schedule" | "routines page") {
   const r = routines().find((x) => x.id === id);
@@ -99,9 +112,11 @@ async function startRun(r: Routine, trigger: string) {
   const at = new Date().toISOString(), period = periodOf(r, new Date());
   const agents: RoutineRun["agents"] = [], errors: string[] = [];
   let prompt = r.prompt || "/signal-to-pr";
-  try { if (r.brief === "sessions") prompt += writeBrief(); }
+  const { repos, skipped } = reposHere(r);
+  if (!repos.length) errors.push(`none of its repos is in this project: ${skipped.join(", ")}`);
+  try { if (!errors.length && r.brief === "sessions") prompt += writeBrief(); }
   catch (e) { errors.push(`the session index: ${(e as Error).message}`); }
-  for (const repo of errors.length ? [] : r.repos) {
+  for (const repo of errors.length ? [] : repos) {
     const start = (machine: string | null) => startAgent({ item: `routine-${r.id}-${repo}`, repo, pr: null, kind: "custom", prompt, edited: false, machine });
     // The first machine from Settings that's ready takes it; any failure there falls back to this Mac, and the run says why.
     const why: string[] = [];
@@ -121,7 +136,7 @@ async function startRun(r: Routine, trigger: string) {
       agents.push({ repo, name: a.name, dryRun: "dryRun" in a, machine: null, ...(why.length ? { fellBack: why.join("; ") } : {}) });
     } catch (e) { errors.push(`${repo}: ${(e as Error).message}`); }
   }
-  const run: RoutineRun = { period, at, trigger, agents, error: errors.length ? errors.join("; ") : null };
+  const run: RoutineRun = { period, at, trigger, agents, error: errors.length ? errors.join("; ") : null, ...(repos.length && skipped.length ? { skipped } : {}) };
   save("routine_runs", { ...routineRuns(), [r.id]: run });
   note({ item: null, trigger: "routine" }, "routine", r.name, run.error ? `failed: ${run.error}` : `started ${agents.map((a) => `${a.name}${a.machine ? ` on ${a.machine}` : ""}`).join(", ")}`, { at, detail: run });
   return run;
@@ -132,7 +147,8 @@ export function startRoutines() {
   if (DEV) return;
   const check = () => {
     if (!tuning.scheduled()) return;
-    const due = routines().filter((r) => isDue(r, new Date(), routineRuns()[r.id], r.when === "start" && (idleSeconds() ?? Infinity) < ACTIVE_S));
+    // A routine with no repo in this project would only fail, and try again every half hour.
+    const due = routines().filter((r) => isDue(r, new Date(), routineRuns()[r.id], r.when === "start" && (idleSeconds() ?? Infinity) < ACTIVE_S) && reposHere(r).repos.length);
     for (const r of due) void runRoutine(r.id, "schedule").catch((e) => console.error(new Date().toISOString(), `routine ${r.id} failed:`, (e as Error).message));
   };
   check();

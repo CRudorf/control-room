@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Suggestion, WorkItem } from "../shared/types";
 import { db } from "./db";
 import { setAdapter, type Adapter } from "./runner";
-import { dismissSuggestion, factsOf, fingerprint, isDismissed, isPicked, livePicked, parseVerdicts, pickedNow, pickupSuggestion, rankSuggestions, setSuggestionsForTest, suggestionsView } from "./suggestions";
+import { archReposOf, dismissSuggestion, factsOf, fingerprint, isDismissed, isPicked, livePicked, parseVerdicts, pickedNow, pickupSuggestion, rankSuggestions, setSuggestionsForTest, suggestionsView } from "./suggestions";
 import { applyPicked } from "./workitems";
 
 const s = (key: string, o: Partial<Suggestion> = {}): Suggestion => ({
@@ -12,6 +12,16 @@ const s = (key: string, o: Partial<Suggestion> = {}): Suggestion => ({
 const keys = (xs: Suggestion[]) => xs.map((x) => x.key);
 
 afterEach(() => setAdapter(null));
+
+describe("archReposOf", () => {
+  test("adds the control room by its repo name, never the folder the installed copy runs from", () => {
+    expect(archReposOf(["widgets"], true)).toEqual(["widgets", "control-room"]);
+    expect(archReposOf(["widgets", "control-room"], true)).toEqual(["widgets", "control-room"]);
+  });
+  test("leaves the control room out of a project that does not hold it", () => {
+    expect(archReposOf(["widgets"], false)).toEqual(["widgets"]);
+  });
+});
 
 describe("rankSuggestions", () => {
   test("an issue blocked by an open issue, or judged wait, is not offered", () => {

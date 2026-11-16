@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isDue, periodOf } from "./routines";
+import { isDue, periodOf, runRepos } from "./routines";
 import type { Routine } from "../shared/types";
 
 const r = (o: Partial<Routine> = {}): Routine => ({ id: "errors", name: "Errors", prompt: "", repos: ["widgets"], cadence: "daily", weekday: 1, weekdaysOnly: true, when: "start", enabled: true, ...o });
@@ -33,5 +33,22 @@ describe("isDue", () => {
     expect(isDue(wk, mon, undefined, true)).toBe(false);
     expect(isDue(wk, wed(9), undefined, true)).toBe(true);
     expect(isDue(wk, new Date(2030, 0, 3, 9), { period: periodOf(wk, wed(9)), at: wed(9).toISOString(), trigger: "schedule", agents: [], error: null }, true)).toBe(false);
+  });
+});
+
+describe("runRepos", () => {
+  const here = (repo: string) => repo !== "control-room";
+  test("a run starts only in the routine's repos of this project, and skips the rest", () => {
+    expect(runRepos(r({ repos: ["widgets", "control-room"] }), here, ["gadgets", "widgets"])).toEqual({ repos: ["widgets"], skipped: ["control-room"] });
+    expect(runRepos(r({ repos: ["widgets"] }), here, ["widgets"])).toEqual({ repos: ["widgets"], skipped: [] });
+  });
+  test("a routine with no repo in this project starts nowhere", () => {
+    expect(runRepos(r({ repos: ["control-room"] }), here, ["widgets"])).toEqual({ repos: [], skipped: ["control-room"] });
+  });
+  test("the friction review reads this Mac's sessions, so it runs in the project's first repo instead", () => {
+    const friction = r({ id: "friction", repos: ["control-room"], brief: "sessions" });
+    expect(runRepos(friction, here, ["gadgets", "widgets"])).toEqual({ repos: ["gadgets"], skipped: ["control-room"] });
+    expect(runRepos(friction, () => true, ["gadgets"])).toEqual({ repos: ["control-room"], skipped: [] });
+    expect(runRepos(friction, here, [])).toEqual({ repos: [], skipped: ["control-room"] });
   });
 });

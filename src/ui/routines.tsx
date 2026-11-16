@@ -43,7 +43,7 @@ function runText(run: RoutineRun | undefined) {
   if (run.error && !run.agents.length) return `Failed ${at}: ${run.error}`;
   const where = [...new Set(run.agents.map((a) => a.machine ?? "this Mac"))].join(" and ");
   const fell = run.agents.filter((a) => a.fellBack).map((a) => a.fellBack).join("; ");
-  return `Ran ${at}${where ? ` on ${where}` : ""}${run.trigger === "routines page" ? " by hand" : ""}${run.agents.some((a) => a.dryRun) ? " (dev: recorded, nothing started)" : ""}${fell ? `. Fell back to this Mac: ${fell}` : ""}${run.error ? `. Failed in ${run.error}` : ""}`;
+  return `Ran ${at}${where ? ` on ${where}` : ""}${run.trigger === "routines page" ? " by hand" : ""}${run.agents.some((a) => a.dryRun) ? " (dev: recorded, nothing started)" : ""}${fell ? `. Fell back to this Mac: ${fell}` : ""}${run.skipped?.length ? `. Skipped ${run.skipped.join(", ")}: not in this project` : ""}${run.error ? `. Failed in ${run.error}` : ""}`;
 }
 
 function Editor({ init, repos, machines, onDone }: { init: Routine; repos: string[]; machines: string[]; onDone: (saved: boolean) => void }) {
