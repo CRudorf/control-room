@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Suggestion, WorkItem } from "../shared/types";
-import { db } from "./db";
+import type { Issue, Suggestion, WorkItem } from "../shared/types";
+import { db, load, save } from "./db";
 import { setAdapter, type Adapter } from "./runner";
-import { dismissSuggestion, factsOf, fingerprint, isDismissed, isPicked, livePicked, parseVerdicts, pickedNow, pickupSuggestion, rankSuggestions, setSuggestionsForTest, suggestionsView } from "./suggestions";
+import { dismissSuggestion, factsOf, fingerprint, forgetDonePicks, isDismissed, isPicked, livePicked, parseVerdicts, pickedNow, pickupSuggestion, rankSuggestions, setSuggestionsForTest, suggestionsView } from "./suggestions";
 import { applyPicked } from "./workitems";
 
 const s = (key: string, o: Partial<Suggestion> = {}): Suggestion => ({
@@ -144,5 +144,22 @@ describe("a pickup leaves the list and becomes a work item", () => {
     expect(isPicked({ key: "ABC-52", assignee: "me" }, p, Date.parse(at) + 30 * day)).toBe(true);
     expect(isPicked({ key: "ABC-52", assignee: null }, p, Date.parse(at) + 14 * day)).toBe(false);
     expect(livePicked([{ key: "ABC-52", assignee: null }], p, Date.parse(at) + 14 * day)).toEqual({});
+  });
+  test("a pickup whose issue is done leaves the board for good, and does not come back on the next read", () => {
+    setSuggestionsForTest([]);
+    save("suggest_picked", { "ABC-53": { at: "2026-11-01T00:00:00Z", summary: "done one", url: null }, "ABC-54": { at: "2026-11-01T00:00:00Z", summary: "open one", url: null } });
+    const onBoard = (issues: Map<string, Issue>) => applyPicked([], pickedNow(), issues).map((x) => x.key);
+    const issue = (key: string, category: string) => [key, { key, category } as Issue] as const;
+    // A read that does not return the issue keeps the pickup.
+    forgetDonePicks(new Map());
+    expect(onBoard(new Map())).toEqual(["ABC-53", "ABC-54"]);
+    // The read with the item's key returns it as done: the item leaves the board.
+    const doneRead = new Map([issue("ABC-53", "done"), issue("ABC-54", "indeterminate")]);
+    forgetDonePicks(doneRead);
+    expect(onBoard(doneRead)).toEqual(["ABC-54"]);
+    // The next read leaves its key out, so the issue is not known. Before, the item came back here.
+    forgetDonePicks(new Map());
+    expect(onBoard(new Map())).toEqual(["ABC-54"]);
+    expect(Object.keys(load<Record<string, unknown>>("suggest_picked") ?? {})).toEqual(["ABC-54"]);
   });
 });

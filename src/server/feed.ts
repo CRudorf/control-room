@@ -20,7 +20,7 @@ import { draftsFile, pendingDrafts, readDrafts } from "./review";
 import { statSync } from "node:fs";
 import { announce } from "./notifier";
 import { dismissRun, runs } from "./runs";
-import { pickedNow } from "./suggestions";
+import { forgetDonePicks, pickedNow } from "./suggestions";
 import { quietAgentsByKey, slug, applyGates, applyIdleAgents, applyJira, applyPicked, approvedShipped, applyCommentWaits, applyParks, applyRuns, runMovedOn, finishedToday, groupWorkItems, rankNext, shutGates, sortItems, suggestFinished } from "./workitems";
 import { jiraError, jiraIssues, startJira, transition } from "./jira";
 import { noteSessions, startUsage, usageFor } from "./usage";
@@ -354,6 +354,8 @@ export function snapshot(): Snapshot {
   const broken = brokenAll();
   const grouped = groupWorkItems(all.map(withBehind).map(withStack(all)).map(withBroken(broken)).map((p) => withReviewers(p, defaultReviewers(p.repo))), h.agents, holds(), reranHeads(), drafts, moves(), new Set([...shutGates(gs, done), ...running(loopsNow())]), { keyOfRef, agentMoves: agentMoves() });
   const issues = new Map([...jiraIssues(), ...trackerIssues()]);
+  // A pickup ends for good when its issue is done, like a comment wait below.
+  forgetDonePicks(issues);
   const quiet = quietAgentsByKey(h.agents, { keyOfRef, agentMoves: agentMoves() });
   const movedOn = (run: Run, it: WorkItem) => runMovedOn(run, it, issues.get(it.key), prFacts().filter((f) => f.feature === it.key && f.merged).map((f) => f.merged!));
   const blocked = applyRuns(applyGates(applyPicked(applyJira(grouped, issues, { branchesFor, mergedPrs, parkOf, quietAgents: (k) => quiet.get(k) ?? [] }), pickedNow(), issues), gs, done), runs(), movedOn);
