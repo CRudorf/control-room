@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { join } from "node:path";
+import { CLAUDE_DIR } from "./repos";
 import { sh, carried, fernetKey, findLogEmails, fill, liveState, projectDirOf, resetChecks, roundCommits, runFile, stopCommands, transcriptText, stagesOf, summarize, type Check, type Profile } from "./verify";
 
 const c = (id: string, status: Check["status"]): Check => ({ id, title: id, status });
@@ -39,7 +41,8 @@ test("a transcript reads as text, with its tools and results", () => {
   expect(t).toContain("(500 more)");
   expect(t).not.toContain("permission-mode");
 });
-test("a working directory maps to its project folder", () => expect(projectDirOf("/a/b.c/d")).toEndWith("/.claude/projects/-a-b-c-d"));
+// The folder follows CLAUDE_CONFIG_DIR, so the test reads it from CLAUDE_DIR and passes in any project.
+test("a working directory maps to its project folder", () => expect(projectDirOf("/a/b.c/d")).toBe(join(CLAUDE_DIR, "projects", "-a-b-c-d")));
 
 test("emails in a log are found, grouped and masked", () => {
   const log = ['{"name": "a.b", "message": "sent to pat@example.com"}', '{"name": "a.b", "message": "sent to sam@x.co.uk"}', "plain line kim@y.org", '{"name":"c","message":"no address, 1.2@3"}'].join("\n");
