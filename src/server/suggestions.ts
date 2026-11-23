@@ -6,7 +6,7 @@ import { projectRepos, tuned } from "./repos";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Suggestion, SuggestionsView, SuggestSource, Verdict, WorkItem } from "../shared/types";
+import type { Issue, Suggestion, SuggestionsView, SuggestSource, Verdict, WorkItem } from "../shared/types";
 import { JIRA, POLL, ROOT, STATE_DIR } from "./config";
 import { every } from "./every";
 import { load, save } from "./db";
@@ -139,6 +139,16 @@ export function livePicked(list: Pick<Suggestion, "key" | "assignee">[], picked:
 
 /** The pickups that still hold, for the board: each one is a work item until something else covers its key. */
 export const pickedNow = (): Picked => livePicked(raw, load<Picked>("suggest_picked") ?? {});
+
+/**
+ * Ends for good each pickup whose issue the tracker reports done. A done item leaves the board, so its key
+ * leaves the next query. Without this, the pickup brings the item back on that read, and it flaps.
+ */
+export function forgetDonePicks(issues: Map<string, Pick<Issue, "category">>) {
+  const picked = load<Picked>("suggest_picked") ?? {};
+  const open = Object.fromEntries(Object.entries(picked).filter(([k]) => issues.get(k)?.category !== "done"));
+  if (Object.keys(open).length !== Object.keys(picked).length) save("suggest_picked", open);
+}
 
 let board: () => WorkItem[] = () => [];
 
